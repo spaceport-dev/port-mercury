@@ -10,7 +10,7 @@ spaceport name: port-mercury
 
 host:
   address: 127.0.0.1
-  port: 10010
+  port: 10000
 
 debug: true
 
