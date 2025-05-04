@@ -1,0 +1,43 @@
+<%@ page import="spaceport.computer.memory.physical.Document; spaceport.computer.memory.virtual.Cargo; spaceport.Spaceport" %>
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport'
+          content='width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0'>
+    <meta http-equiv='X-UA-Compatible' content='ie=edge'>
+    <link rel='manifest' href='/manifest.webmanifest'>
+
+    /// Try to use the 'name' from the PWA section of the configuration manifest for the title
+    <title>${ Spaceport.config.PWA?.name ?: 'Spaceport App' }</title>
+
+    /// Use your favorite CSS Framework, or check out spacewalk.css (https://spacewalk.aufdem.dev)
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/gh/aufdemrand/spacewalk.css@latest/spacewalk.css'>
+
+    /// Include hud-core.js for Launchpad's reactivity features (NOTE: defer, or include at the end)
+    /// You may want to lock in to a specific version, or locally host this file when launching to production.
+    /// There's also a minified version available: hud-core.min.js
+    <script defer src='https://cdn.jsdelivr.net/gh/spaceport-dev/hud-core.js@latest/hud-core.js' type='application/javascript'></script>
+</head>
+
+<body>
+
+    <header style='background-color: #3c3c3c'>
+        <img href='/' src='/assets/img/icon.svg' style='height: 5em;'>
+    </header>
+
+    <main>
+
+    /// Launchpad will inject the 'parts' here since this is being used as a vessel.
+    <payload/>
+
+    </main>
+
+    <footer class='spread'>
+        <span>Powerered by <a href='https://spaceport.com.co'>Spaceport</a></span>
+        /// Use the Cargo <-> Document mirroring to track page hits
+        <span><span class='comfy cozy' href='/a/'>🔑️</span> ${ Cargo.fromDocument(Document.get('page-hits', 'mercury')).inc() }</span>
+    </footer>
+
+</body>
+</html>

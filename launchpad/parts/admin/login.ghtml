@@ -1,0 +1,105 @@
+<%@ page import="spaceport.Spaceport" %>
+<%
+
+    // Allow the template to handle some customization and context.
+    // ie. the administratorAuthPlug will send a custom message in the data map.
+    def logo     = data.logo     ?: '/assets/img/icon.svg'
+    def title    = data.title    ?: 'Login | Spaceport'
+    def message  = data.message  ?: 'This page requires authentication to be accessed.'
+    def greeting = data.greeting ?: 'Welcome!'
+
+%>
+
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport'
+          content='width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0'>
+    <meta http-equiv='X-UA-Compatible' content='ie=edge'>
+    <title>${ title }</title>
+    <style>
+    body {
+        font-family: 'Roboto', sans-serif;
+        margin: 3rem;
+        max-width: 100vw;
+    }
+
+    img {
+        height: 6rem;
+    }
+
+    form {
+        border: .25rem solid lightgray;
+        padding: 2rem 3rem;
+        background-color: #e1d8db;
+        margin-top: 3rem;
+        margin-left: -3rem;
+        margin-right: -3rem;
+
+        * {
+            margin-bottom: 1.25rem;
+        }
+
+        :last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            font-weight: 800;
+            opacity: 0.75;
+
+            input { margin-top: 0.75rem; }
+        }
+
+        input {
+            display: block;
+            padding: 0.75rem 1.25rem;
+            font-size: 1rem;
+            border: .125rem outset lightgray;
+            border-radius: .25rem;
+        }
+
+        input[type=submit] {
+            font-weight: 600;
+            cursor: pointer;
+            color: dimgray;
+
+            &:hover {
+                background-color: white;
+            }
+
+            &:active {
+                border-style: inset;
+            }
+        }
+    }
+    </style>
+</head>
+
+<body>
+<main>
+    <h1>${ greeting }</h1>
+
+    <img src='${ logo }'>
+
+    <p class='message'>${ message }</p>
+
+    <p>Enter your user credentials to continue, or <a href='#' onclick='history.back()'>go back</a> to where you came from.</p>
+
+    <form action='/login' method='post' role='form'>
+        <label> Username:
+            <input type='text' name='username' aria-labelledby='username-label' aria-required='true' required>
+        </label>
+
+        <label> Password:
+            <input type='password' name='password' aria-required='true' required>
+        </label>
+        ${ (data.'redirect' ? "<input name='redirect' id='redirect' type=hidden value='" + data.'redirect' + "'>" : '') }
+        <input type='submit' value='Login'>
+    </form>
+
+</main>
+</body>
+</html>

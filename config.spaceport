@@ -1,0 +1,52 @@
+# Spaceport configuration manifest file (MERCURY)
+# See also: https://www.spaceport.com.co/docs/configuration-manifest
+
+spaceport name: port-mercury
+
+# Optional, defaults to the working directory
+# spaceport root: /users/jeremy/spaceport
+# Or, Windows style
+# spaceport root: C:\users\jeremy\spaceport
+
+host:
+  address: 127.0.0.1
+  port: 10010
+
+debug: true
+
+logging:
+  enabled: true
+  path: logs/
+
+memory cores:
+  main:
+    address: 127.0.0.1:5984
+    # Optional, will prompt for username/password if not provided here
+    # username: admin
+    # password: password
+
+source modules:
+  paths:
+    - modules/
+
+static assets:
+  paths:
+    /assets/ : assets/
+
+
+#
+# User-defined configuration nodes
+#
+
+
+PWA:
+  enabled: true
+  # PWA (Progressive Web App) configuration
+  name: Spaceport PWA
+  icons:
+    - src: /assets/img/icon.svg
+      sizes: any
+      type: image/svg+xml
+
+  # Optional PWA settings: short name, description, id, start url,
+  # theme color, background color, orientation, scope and display

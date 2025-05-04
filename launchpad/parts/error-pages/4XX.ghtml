@@ -1,0 +1,101 @@
+<%
+    //
+    // Serve a custom 4XX error page
+
+    def errorCode = r.context.response.status
+
+    def errorMessages = [
+            400: 'Bad Request',
+            401: 'Unauthorized',
+            402: 'Payment Required',
+            403: 'Forbidden',
+            404: 'Not Found',
+            405: 'Method Not Allowed',
+            406: 'Not Acceptable',
+            407: 'Proxy Authentication Required',
+            408: 'Request Timeout',
+            409: 'Conflict',
+            410: 'Gone',
+            411: 'Length Required',
+            412: 'Precondition Failed',
+            413: 'Payload Too Large',
+            414: 'URI Too Long',
+            415: 'Unsupported Media Type',
+            416: 'Range Not Satisfiable',
+            417: 'Expectation Failed',
+            418: "I'm a teapot",
+            421: 'Misdirected Request',
+            422: 'Unprocessable Entity',
+            423: 'Locked',
+            424: 'Failed Dependency',
+            425: 'Too Early',
+            426: 'Upgrade Required',
+            428: 'Precondition Required',
+            429: 'Too Many Requests',
+            431: 'Request Header Fields Too Large',
+            451: 'Unavailable For Legal Reasons',
+    ]
+
+    def exclaims = [ 'Interesting!', 'This is odd!', 'Hmmm..', 'This doesn\'t seem right.' ]
+
+
+
+%>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>${ errorCode } ${ errorMessages[errorCode] }</title>
+    <style>
+    body {
+        font-family: "Roboto", sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+    }
+
+    div {
+        margin: 0 auto;
+        padding: 3rem;
+
+        &.container {
+            max-width: 800px;
+            display: flex;
+        }
+    }
+
+    h1 {
+        color: #333;
+        font-size: 2rem;
+        margin: 0;
+    }
+
+    p {
+        color: #666;
+        font-size: 1.2rem;
+        margin-top: 0;
+    }
+
+    img {
+        max-width: 9rem;
+        max-height: 9rem;
+    }
+    </style>
+</head>
+
+<body>
+<main>
+    <div class="container">
+        <div class="icon"><img src="/assets/img/error.png"></div>
+        <div class="error">
+            <h1>${ exclaims.random() }</h1>
+            <h2><strong>${ errorCode }</strong> ${ errorMessages[errorCode] }</h2>
+            <p>Something went wrong. Press back to return to the previous page, or try reloading this page.</p>
+        </div>
+    </div>
+</main>
+
+<footer>
+    <div>Powered by <a href="https://www.spaceport.com.co">Spaceport</a></div>
+</footer>
+</body>

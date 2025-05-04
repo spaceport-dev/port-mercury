@@ -1,0 +1,67 @@
+<%@ page import="spaceport.computer.memory.physical.Document; spaceport.computer.memory.virtual.Cargo; spaceport.Spaceport" %>
+
+///
+/// This route did not use a Launchpad 'vessel', or wrapper, so we need to include the HTML boilerplate here.
+///
+
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport'
+          content='width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0'>
+    <title>Admin Panel</title>
+
+    /// Use your favorite CSS Framework, or check out spacewalk.css (https://spacewalk.aufdem.dev)
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/gh/aufdemrand/spacewalk.css@latest/spacewalk.css'>
+
+    /// Include hud-core.js for Launchpad's reactivity features (NOTE: defer, or include after body)
+    /// You may want to lock in to a specific version, or locally host this file when launching to production.
+    /// There's also a minified version available: hud-core.min.js
+    <script defer src='https://cdn.jsdelivr.net/gh/spaceport-dev/hud-core.js@latest/hud-core.js' type='application/javascript'></script>
+</head>
+
+<body>
+
+<header style='background-color: #3c3c3c'>
+    <img href='/' src='/assets/img/icon.svg' style='height: 5em;'> <b class='white cozy text-black' href='/logout?redirect=/a/'>Admin</b>
+</header>
+
+<main>
+
+    <h1>Greetings, ${ client.userID }</h1>
+
+    <p class='large-text'>Welcome to the admin panel. Here you can add ways to administer your application.</p>
+
+    <section>
+        <h4>Messages</h4>
+
+        <% def messages = Cargo.fromDocument(Document.get('messages', 'mercury')) %>
+
+        <p>There ${{ messages.size() == 1 ? 'is 1 message' : 'are ' + messages.size() + ' messages' }} in the queue.</p>
+
+        <% messages.each { key, message -> %>
+        <panel target='self' class='padded bordered block-margin'>
+            <flex class='spread'>
+                <div><strong>${ message.name }</strong> (${ message.email })</div>
+
+                /// Provide a delete button with a server action for deleting the message, and a transmission
+                /// back to the client removing the entry from the DOM.
+                <div key='${ key }' on-click=${ _{ messages.delete(key); [ '@remove' ] }}>🗑️</div>
+            </flex>
+                <div><b>${ message.timestamp.relativeTime() }</b></div>
+            <p class='less-block-margin'>${ message.message }</p>
+        </panel>
+        <% } %>
+
+    </section>
+
+
+</main>
+
+<footer class='spread'>
+    <span>Powerered by <a href='https://spaceport.com.co'>Spaceport</a></span>
+</footer>
+
+</body>
+</html>

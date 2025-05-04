@@ -1,0 +1,70 @@
+<%@ page import="spaceport.Spaceport" %>
+
+<aside>
+    <panel>
+        <strong class="less-top-margin">Spaceport</strong>
+        <label>Build
+            <div>${ Spaceport.version }</div>
+        </label>
+        <label>Java Version
+            <div>${ System.getProperty('java.version') }</div>
+        </label>
+        <label>Groovy Version
+            <div>${ GroovySystem.version }</div>
+        </label>
+        <label>Client ID
+            <div>${ client.userID }</div>
+        </label>
+        <label>Route
+            <div>${ context.target }</div>
+        </label>
+    </panel>
+</aside>
+
+<h1>Hello, World—from Spaceport!</h1>
+
+<p class="large-text">If you see this page, lots of things are going right. Someone is getting ready to
+build something really awesome!</p>
+
+<img src="/assets/img/spacegal.svg" class='more-block-margin centered' style="height: 20em;">
+
+<section class="constrained">
+    <h3>Getting Started</h3>
+    <p>
+        This page serves as a confirmation that your initial setup is complete. To begin building your application:
+    </p>
+    <ol>
+        <li>
+            Explore the code for this page, located at <code>`/launchpad/parts/index.ghtml`</code>, to
+            see how it works within Spaceport. Check out the route in <code>`/modules/App.groovy`</code>, and
+            the vessel in <code>`/launchpad/parts/wrapper.ghtml`</code>.
+        </li>
+        <li>
+            Consult the <a href="https://spaceport.com.co/docs/scaffolds#mercury"><strong>Mercury Starter Kit
+            Documentation</strong></a> for specific details on this project structure, key features, and
+            guidance tailored for single-tenant applications.
+        </li>
+        <li>
+            Dive into the main <a href="https://spaceport.com.co/docs/"><strong>Spaceport Framework
+            Documentation</strong></a> to learn more about routing, data handling, security, and building your
+            full-stack application.
+        </li>
+        <li>
+            Begin adding your own features and components!
+        </li>
+    </ol>
+</section>
+
+<panel class="bordered padded gray constrained block-margin cleared">
+    <strong>Just stopping by?</strong>
+    <p><a href="contact.html">Send a message</a> to the Spaceport Administrator and let them know
+    you're excited to see what's next.</p>
+</panel>
+
+
+
+
+
+
+
+

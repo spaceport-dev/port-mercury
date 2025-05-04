@@ -1,0 +1,59 @@
+<%@ page import="spaceport.computer.memory.physical.Document; spaceport.computer.memory.virtual.Cargo" %>
+<%
+    // This contact form demonstrates a server-side form handling process
+    // in which the form, instead of a typical POST request and redirect, is
+    // processed by Launchpad's socket connection to perform server-side functions
+    // and actions.
+
+    // Provide a server-side function (Closure) to handle the form submission
+    def submitNewMessage = { t ->
+        // Extract the form data from the transmission (t) object
+        def name = t.name as String     // Implicit data access
+        String email = t.get('email')   // Traditional data access, this also works
+        String message = t.getString('message')  // Explicit typed access (coerce to String forcefully)
+
+        def newMessage = [
+            'name': name.clean(),   // Perform data sanitization with clean()
+            'email': email.clean(),
+            'message': message.clean(),
+            'timestamp': System.currentTimeMillis()
+        ]
+
+        // Grab the Document we'll use to store the message
+        // See more: https://spaceport.com.co/docs/documents
+        Document messages = Document.get('messages', 'mercury')
+
+        // Use Cargo to store the message in a database document.
+        // Cargo is a data type modeled for reactivity and provides
+        // a multitude of methods for deep data access and manipulation.
+        // See more: https://spaceport.com.co/docs/cargo
+        Cargo.fromDocument(messages).setNext(newMessage)
+
+        // Send back a response to the client using the transmission
+        // See more: https://spaceport.com.co/docs/launchpad#transmissions
+        return "<p class='bordered info padded'>Thank you for your message, ${ name }! We'll get back to you soon.</p>"
+
+    }
+
+%>
+
+<h1>First Contact</h1>
+<p class='constrained'>Interested in what's going on? Make first contact with the Spaceport Administrator to learn more.</p>
+
+<section id='contact-section'>
+    <panel>
+        /// Use a server action (on-*) to handle the form submission and render the response
+        <form target='#contact-section' on-submit=${ _{ t -> submitNewMessage(t) }}>
+            <label for='name'>Name</label>
+            <input type='text' id='name' name='name' required>
+            <label for='email'>Email</label>
+            <input type='email' id='email' name='email' required>
+            <label for='message'>Message</label>
+            <textarea id='message' name='message' rows='4' required></textarea>
+            /// Even though its a server action, a submit button still works!
+            <button type='submit'>Send Message</button>
+        </form>
+    </panel>
+</section>
+
+
