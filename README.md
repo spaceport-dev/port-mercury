@@ -13,11 +13,11 @@ This starter kit is a great choice for a single-tenant application, such as a we
 It offers a basic structure that includes the key components of Spaceport, including routing, authentication,
 database access, reactivity, and more.
 
-If you are looking for a more complex configuration that may share resources with other applications, you may want to
-consider using the [Port-Gemini](https://spaceport.com.co/docs/scaffolds#gemini) starter kit instead.
+<!-- If you are looking for a more complex configuration that may share resources with other applications, you may want to
+consider using the [Port-Gemini](https://spaceport.com.co/docs/scaffolds#gemini) starter kit instead. -->
 
-If you are looking for a multi-tenant application that has multiple users or groups, 
-[Port-Voyager](https://spaceport.com.co/docs/scaffolds#voyager) might be a better place to start.
+<!-- If you are looking for a multi-tenant application that has multiple users or groups, 
+[Port-Voyager](https://spaceport.com.co/docs/scaffolds#voyager) might be a better place to start. -->
 
 Developer Onboarding: [https://spaceport.com.co/docs/developer-onboarding](https://spaceport.com.co/docs/developer-onboarding)
 
