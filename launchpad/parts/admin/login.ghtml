@@ -2,7 +2,7 @@
 <%
 
     // Allow the template to handle some customization and context.
-    // ie. the administratorAuthPlug will send a custom message in the data map.
+    // eg. the administratorAuthPlug will send a custom message for the data map.
     def logo     = data.logo     ?: '/assets/img/icon.svg'
     def title    = data.title    ?: 'Login | Spaceport'
     def message  = data.message  ?: 'This page requires authentication to be accessed.'
@@ -96,7 +96,10 @@
         <label> Password:
             <input type='password' name='password' aria-required='true' required>
         </label>
+
+        /// Use a hidden input to pass along the redirect to the POST Alert handler
         ${ (data.'redirect' ? "<input name='redirect' id='redirect' type=hidden value='" + data.'redirect' + "'>" : '') }
+
         <input type='submit' value='Login'>
     </form>
 
