@@ -26,7 +26,6 @@ class App {
 
     @Alert('on initialized')
     static _init(Result r) {
-
         // Make sure the 'mercury' database exists, we'll use this for some default
         // database documents through the application. Your app may need additional
         // databases. They can be created here, or initialized as a migration.
@@ -54,7 +53,6 @@ class App {
     // Handle calls to /index.html explicitly
     @Alert('on /index.html hit')
     static _index(HttpResult r) {
-
         // Pass off to launchpad to render the index.ghtml file inside of wrapper.ghtml
         launchpad.assemble(['index.ghtml']).launch(r, 'wrapper.ghtml')
     }
@@ -63,7 +61,6 @@ class App {
     // Handle sub-pages with regular expression matches
     @Alert('~on /([^/]+)\\.html hit')   // This matches the name of the html page, disallowing sub-folders
     static _pages(HttpResult r) {
-
         // Use the page name match to route the correct file
         def pageName = r.matches[0]
         if (pageName == 'index') return // Already handled. Alerts can stack!
@@ -77,7 +74,6 @@ class App {
 
     @Alert('on /a/ hit')
     static _admin(HttpResult r) {
-
         // Use the 'administratorAuthPlug' provided by Router.groovy
         // to ensure the user is authenticated and authorized.
         // If not, the plug will send the user to the login page
