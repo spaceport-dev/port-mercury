@@ -160,7 +160,6 @@ class Router {
 
     // This is not guaranteed to work on all browsers, but it is a fallback for most
     // modern browsers. If you need more control over the favicon, you should use a meta tag.
-
     @Alert('on /favicon.ico hit')
     static _favicon(HttpResult r) {
         // Write the favicon file to the client
@@ -172,15 +171,19 @@ class Router {
     // 4XX and 5XX custom error pages
     //
 
+
+    // Alerts can stack. 'on page hit' runs after an explicit 'on ... hit'
     @Alert('on page hit')
     static _checkStatusCode(HttpResult r) {
-
         if (r.context.response.status >= 500) {
+            // Something went wrong, and there was a 5XX error.
             launchpad.assemble(['error-pages/5XX.ghtml']).launch(r)
         } else if (r.context.response.status >= 400) {
+            // No alerts addressed the page hit, or some other
+            // 4XX error was set.
             launchpad.assemble(['error-pages/4XX.ghtml']).launch(r)
         }
-
     }
 
+    
 }
