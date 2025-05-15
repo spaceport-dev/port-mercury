@@ -5,7 +5,7 @@
 Port-Mercury is a Spaceport starter kit that provides a basic app structure and configuration for building a 
 Spaceport application with some key Spaceport features.
 
-See also: [Scaffolds](https://spaceport.com.co/docs/scaffolds#mercury) for more information.
+See also: [Scaffolds](https://spaceport.com.co/docs/scaffolds#port-mercury) for more information.
 
 
 ## Getting Started
