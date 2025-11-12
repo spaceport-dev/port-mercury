@@ -1,11 +1,11 @@
-![PORT-MERCURY Graphic](https://spaceport.com.co/assets/port-mercury-graphic.png "PORT-MERCURY Graphic")
+![PORT-MERCURY Graphic](https://spaceport.sh/assets/port-mercury-graphic.png "PORT-MERCURY Graphic")
 
 
 # Port-Mercury
 Port-Mercury is a Spaceport starter kit that provides a basic app structure and configuration for building a 
 Spaceport application with some key Spaceport features.
 
-See also: [Scaffolds](https://spaceport.com.co/docs/scaffolds#port-mercury) for more information.
+See also: [Scaffolds](https://spaceport.sh/docs/scaffolds#port-mercury) for more information.
 
 
 ## Getting Started
@@ -19,12 +19,12 @@ consider using the [Port-Gemini](https://spaceport.com.co/docs/scaffolds#gemini)
 <!-- If you are looking for a multi-tenant application that has multiple users or groups, 
 [Port-Voyager](https://spaceport.com.co/docs/scaffolds#voyager) might be a better place to start. -->
 
-Developer Onboarding: [https://spaceport.com.co/docs/developer-onboarding](https://spaceport.com.co/docs/developer-onboarding)
+Developer Onboarding: [https://spaceport.com.co/docs/developer-onboarding](https://spaceport.sh/docs/developer-onboarding)
 
 
 ## Pre-requisites
-- Java 8 or higher
-- CouchDB 2.0 or higher
+- Java 8 or higher (11+ recommended)
+- CouchDB 2.0 or higher (3.5+ recommended)
 
 
 
@@ -46,13 +46,13 @@ java -jar spaceport.jar --start config.spaceport
 
 This will start the application using the configuration file `config.spaceport`.
 
-Don't have Spaceport? You can download it from the [Spaceport website](https://spaceport.com.co/builds/). Or, use
+Don't have Spaceport? You can download it from the [Spaceport website](https://spaceport.sh/builds/). Or, use
 the following command to grab the latest version:
 
 ```bash 
-curl -L https://spaceport.com.co/builds/spaceport-latest.jar -o spaceport.jar
+curl -L https://spaceport.sh/builds/spaceport-latest.jar -o spaceport.jar
 ```
 
 
 ## Learn more
-For more information about Spaceport, visit the [Spaceport documentation](https://spaceport.com.co/docs).
+For more information about Spaceport, visit the [Spaceport documentation](https://spaceport.sh/docs).
