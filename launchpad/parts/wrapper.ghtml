@@ -34,7 +34,7 @@
     </main>
 
     <footer class='spread'>
-        <span>Powered by <a href='https://spaceport.com.co'>Spaceport</a></span>
+        <span>Powered by <a href='https://spaceport.sh'>Spaceport</a></span>
         /// Use the Cargo <-> Document mirroring to track page hits
         <span><span class='comfy cozy' href='/a/'>🔑️</span> ${ Cargo.fromDocument(Document.get('page-hits', 'mercury')).inc() }</span>
     </footer>
