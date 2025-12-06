@@ -4,7 +4,7 @@
 spaceport name: port-mercury
 
 # Optional, defaults to the working directory
-# spaceport root: /users/jeremy/spaceport
+# spaceport root: /home/jeremy/spaceport
 # Or, Windows style
 # spaceport root: C:\users\jeremy\spaceport
 
@@ -27,11 +27,11 @@ memory cores:
 
 source modules:
   paths:
-    - modules/
+    - modules/*
 
 static assets:
   paths:
-    /assets/ : assets/
+    /assets/* : assets/
 
 
 #
