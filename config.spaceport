@@ -31,7 +31,7 @@ source modules:
 
 static assets:
   paths:
-    /assets/* : assets/
+    /assets/ : assets/*
 
 
 #
