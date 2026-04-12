@@ -297,7 +297,7 @@ while (text.contains('<g:')) {
 }
 ```
 
-Self-closing `<g:tag />` syntax is first normalized to `<g:tag></g:tag>` via regex before this loop runs. The `hud:` prefix is also aliased to `g:` for backward compatibility.
+The `hud:` prefix is aliased to `g:` for backward compatibility.
 
 In `processTag()`, the engine checks two registries:
 1. **Built-in generators** (`generators` map) -- handles tags like `<g:javascript>` and `<g:prime>`

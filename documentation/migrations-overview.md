@@ -17,7 +17,8 @@ If you have experience with Rails migrations, Django migrations, or Flyway, Spac
 - **No automatic ordering.** Migrations are not numbered or timestamped. The CLI presents them as a flat list, and you pick the one you want to run.
 - **No migration history.** Spaceport does not track which migrations have been run. Scripts should be written to be idempotent -- safe to execute repeatedly.
 - **Interactive by default.** Migrations can prompt the operator for input (usernames, passwords, confirmation of destructive actions). This makes them well suited for setup tasks that require human decisions.
-- **Full database access.** Migration scripts use the same Spaceport APIs (`Document`, `ClientDocument`, `Spaceport.main_memory_core`) that your application code uses. There is no separate migration DSL.
+- **Full database access.** Migration scripts use the same core Spaceport APIs (`Document`, `ClientDocument`, `Spaceport.main_memory_core`) that your application code uses. There is no separate migration DSL.
+- **Minimal runtime.** The migration environment only loads core Spaceport classes, metaclass enhancements, and a database connection. **Your project's source modules are not loaded** -- migrations cannot reference classes, services, or utilities defined in your `modules/` directory. All logic must be self-contained within the script itself.
 - **CLI environment.** Migrations run inside `Command.with { }`, giving access to formatted output helpers (`printBox`, `success`, `error`) and input prompts (`promptInput`, `promptMultiInput`).
 
 
@@ -51,10 +52,7 @@ Command.with {
     """)
 
     // Ensure the users database exists
-    if (!Spaceport.main_memory_core.containsDatabase('users')) {
-        Spaceport.main_memory_core.createDatabase('users')
-        success("Created 'users' database.")
-    }
+    Spaceport.main_memory_core.createDatabaseIfNotExists('users')
 
     // Prompt for credentials
     def username = promptInput('Enter a new username (default: administrator)')
@@ -94,6 +92,42 @@ java -jar spaceport.jar --migrate config.spaceport
 Spaceport will load the manifest, connect to the configured database, and display an interactive menu of `.groovy` files found in the migrations directory. Select a script to execute it.
 
 If the database is not reachable, the CLI will prompt you to continue without a connection or exit.
+
+
+## What's Available (and What's Not)
+
+The migration runtime is deliberately minimal. Spaceport loads only what's needed for database operations and CLI interaction:
+
+**Available:**
+- Core Spaceport classes (`Document`, `ClientDocument`, `Cargo`, `CouchHandler`)
+- Metaclass enhancements (`.clean()`, `.combine{}`, `.json()`, etc.)
+- The `Command` CLI helpers (`printBox`, `promptInput`, `success`, `error`, etc.)
+- The database connection (`Spaceport.main_memory_core`)
+- Your merged configuration (`Spaceport.config`)
+- Standard Groovy and Java libraries
+
+**Not available:**
+- Your project's source modules (`modules/` directory is not loaded)
+- Stowaway JARs (third-party libraries from `stowaways/` are not loaded)
+- The HTTP server, routing, alerts, or Launchpad
+- Any classes or utilities defined in your application code
+
+This means migration scripts must be **self-contained**. If you have a helper method in your project that formats user data, you cannot call it from a migration -- you need to inline that logic or write it as a closure within the script. This is by design: migrations should work independently of your application code so they can run even when the application itself is broken or mid-refactor.
+
+If you need setup logic that depends on your project's classes -- registering CouchDB views, initializing app-specific state, or ensuring databases exist based on your data model -- use `@Alert('on initialize')` or `@Alert('on initialized')` in your source modules instead. These alerts fire every time the server starts (and on hot-reload), so they have full access to your project code. This is the established pattern: for example, a `Document` subclass can ensure its own database and views exist each time the application boots:
+
+```groovy
+@Alert('on initialized')
+static _init(Result r) {
+    Spaceport.main_memory_core.createDatabaseIfNotExists('products')
+
+    ViewDocument.get('views', 'products').setViewIfNeeded('all', '''
+        function(doc) { emit(doc._id, null); }
+    ''')
+}
+```
+
+Use migrations for tasks that happen **outside** the running application -- creating administrator accounts, resetting passwords, seeding data that requires operator input -- and `on initialize` for setup that should happen **every time the server starts**.
 
 
 ## Best Practices

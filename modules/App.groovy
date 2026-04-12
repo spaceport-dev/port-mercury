@@ -29,8 +29,7 @@ class App {
         // Make sure the 'mercury' database exists, we'll use this for some default
         // database documents through the application. Your app may need additional
         // databases. They can be created here, or initialized as a migration.
-        if (!Spaceport.main_memory_core.containsDatabase('mercury'))
-            Spaceport.main_memory_core.createDatabase('mercury')
+        Spaceport.main_memory_core.createDatabaseIfNotExists('mercury')
     }
 
 

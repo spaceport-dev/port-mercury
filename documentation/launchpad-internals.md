@@ -80,23 +80,7 @@ text = text.replaceAll(/<g:javascript>/, '<script type="text/javascript">')
 text = text.replaceAll(/<\/g:javascript>/, '</script>')
 ```
 
-**4. CSS class shorthand expansion.** Dot notation like `<div.container.padded>` is converted to `<div class='container padded'>`:
-
-```groovy
-def classPattern = /(?s)<(\w+(:\w+)?)((\.[\w|-]+)+)/
-text = text.replaceAll(classPattern) { matches ->
-    "<${ matches[1] } class='${ matches[3].split('\\.').join(' ')[1..-1] }'"
-}
-```
-
-**5. Self-closing `<g:*>` tag expansion.** Tags like `<g:flag path="store#key"/>` are expanded to `<g:flag path="store#key"></g:flag>`:
-
-```groovy
-def selfClosingPattern = Pattern.compile(/<(g:[\w-]+)(?:\s+([^>]*?))?\s*\/>/, Pattern.DOTALL)
-text = selfClosingMatcher.replaceAll('<$1$2></$1>')
-```
-
-**6. Generator tag processing.** All `<g:*>` tags are processed from innermost to outermost. The engine locates the *last* `<g:` occurrence in the text, processes it, then repeats until no more remain. This inside-out approach ensures nested generators are resolved before their parents.
+**4. Generator tag processing.** All `<g:*>` tags are processed from innermost to outermost. The engine locates the *last* `<g:` occurrence in the text, processes it, then repeats until no more remain. This inside-out approach ensures nested generators are resolved before their parents.
 
 For each tag, the engine:
 
@@ -110,14 +94,10 @@ For each tag, the engine:
 
 | Generator | Input | Output |
 |---|---|---|
-| `<g:if condition="expr">body</g:if>` | Condition + body | `<% if(expr) { %> body <% } %>` |
-| `<g:else>body</g:else>` | Body only | `<% else { %> body <% } %>` |
-| `<g:elseif condition="expr">body</g:elseif>` | Condition + body | `<% else if(expr) { %> body <% } %>` |
 | `<g:each in="source" var="x">body</g:each>` | Source collection + optional var name | `<% for (def x in source) { %> body <% } %>` |
 | `<g:repeat count="n">body</g:repeat>` | Count attribute | Literal string repetition of body `n` times |
-| `<g:flag path="store#path">` | Path in `storeName#flagPath` format | `<hud-item><%= Cargo.fromStore("store").get("path") %></hud-item>` |
 
-Conditions and iteration sources accept three syntaxes for their value attributes:
+Iteration sources accept three syntaxes for their value attributes:
 - `storeName#flagPath` -- expanded to `Cargo.fromStore("storeName").get("flagPath")`
 - `${expression}` -- the `${ }` wrapper is stripped, leaving the raw expression
 - `$variable` -- the `$` prefix is stripped
@@ -130,7 +110,7 @@ When a `<g:*>` tag matches a registered Server Element instead of a built-in gen
 
 These markers are resolved later during the `parseElements()` phase of `launch()`.
 
-**7. `@Provided` annotation stripping.** Lines containing `@Provided` are wrapped in block comments:
+**5. `@Provided` annotation stripping.** Lines containing `@Provided` are wrapped in block comments:
 
 ```groovy
 text = text.replaceAll(/(@Provided.*)/, '/* $1 */')
@@ -138,7 +118,7 @@ text = text.replaceAll(/(@Provided.*)/, '/* $1 */')
 
 `@Provided` is purely an IDE/documentation hint -- it has no runtime effect.
 
-**8. Action delegate injection.** Inside server action closures (`${ _{ ... }}`), closure calls like `$closureName(args)` have delegate assignment code injected. This ensures that closures called within server actions use the `Catch` proxy as their delegate, enabling recursive reactive dependency tracking:
+**6. Action delegate injection.** Inside server action closures (`${ _{ ... }}`), closure calls like `$closureName(args)` have delegate assignment code injected. This ensures that closures called within server actions use the `Catch` proxy as their delegate, enabling recursive reactive dependency tracking:
 
 ```groovy
 // Before preprocessing
@@ -150,7 +130,7 @@ ${ _{ ;try{$myHandler.delegate=actionDelegate;$myHandler.resolveStrategy=Closure
 
 This transformation also applies to regular script-scoped closure assignments (`= { ... }`) that contain `$closureName()` calls.
 
-**9. Root-level `def` removal.** The `removeDefsOutsideBraces()` method strips `def` keywords from variable declarations at the root scope (not inside `{ }` blocks). It uses brace-depth tracking to determine whether each `def` is at the top level:
+**7. Root-level `def` removal.** The `removeDefsOutsideBraces()` method strips `def` keywords from variable declarations at the root scope (not inside `{ }` blocks). It uses brace-depth tracking to determine whether each `def` is at the top level:
 
 ```groovy
 text = removeDefsOutsideBraces(text)
@@ -162,7 +142,7 @@ This converts root-level local variables into binding properties, enabling:
 
 Variables inside closures retain their `def` and remain local to that closure scope.
 
-**10. Reactive expression sugar.** The `${{ expr }}` syntax is transformed into a two-parameter closure call:
+**8. Reactive expression sugar.** The `${{ expr }}` syntax is transformed into a two-parameter closure call:
 
 ```groovy
 text = text.replaceAll(/\$\{\{\s*/, '\\${ _{ _script, _registration -> ')
@@ -170,9 +150,9 @@ text = text.replaceAll(/\$\{\{\s*/, '\\${ _{ _script, _registration -> ')
 
 So `${{ dock.counter.get() }}` becomes `${ _{ _script, _registration -> dock.counter.get() }}`. The two parameters (`_script`, `_registration`) signal to the `bind()` method that this is a "launch reaction" rather than a "launch binding" (server action).
 
-**11. `<g:prime>` inline inclusion.** Tags like `<g:prime src="partial.ghtml"/>` are replaced with the rendered content of the referenced file. This inclusion happens during preprocessing, before the template is compiled, so the primed content becomes part of the same compiled script.
+**9. `<g:prime>` inline inclusion.** Tags like `<g:prime src="partial.ghtml"/>` are replaced with the rendered content of the referenced file. This inclusion happens during preprocessing, before the template is compiled, so the primed content becomes part of the same compiled script.
 
-**12. Import conversion.** JSP/GSP-style import directives are extracted, converted to Groovy import statements, and prepended to the template text:
+**10. Import conversion.** JSP/GSP-style import directives are extracted, converted to Groovy import statements, and prepended to the template text:
 
 ```html
 <%@ page import="spaceport.Spaceport; documents.MyDoc" %>

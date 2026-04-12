@@ -107,8 +107,7 @@ class App {
 
     @Alert('on initialized')
     static _init(Result r) {
-        if (!Spaceport.main_memory_core.containsDatabase('myapp'))
-            Spaceport.main_memory_core.createDatabase('myapp')
+        Spaceport.main_memory_core.createDatabaseIfNotExists('myapp')
     }
 
     @Alert('on / hit')
@@ -364,8 +363,7 @@ Design your `@Alert('on initialize')` handlers to be idempotent. They run on fir
 @Alert('on initialize')
 static _init(Result r) {
     // Good: check before creating
-    if (!Spaceport.main_memory_core.containsDatabase('myapp'))
-        Spaceport.main_memory_core.createDatabase('myapp')
+    Spaceport.main_memory_core.createDatabaseIfNotExists('myapp')
 
     // Good: setViewIfNeeded only writes if the view doesn't exist
     ViewDocument.get('views', 'mydb')

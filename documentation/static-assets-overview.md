@@ -157,7 +157,7 @@ Port Mercury keeps assets minimal with just an `img/` subdirectory:
 ```yaml
 static assets:
   paths:
-    /assets/* : assets/
+    /assets/ : assets/*
 ```
 
 ```

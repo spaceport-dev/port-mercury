@@ -275,49 +275,9 @@ Controls which DOM element receives the server action's return value:
 
 ## `<g:*>` Generator Tags
 
-Generator tags are preprocessed by `SpaceportTemplateEngine` into Groovy template code before the template is compiled. They provide a declarative syntax for common control structures. Self-closing syntax (`<g:tag />`) is supported.
+Generator tags are preprocessed by `SpaceportTemplateEngine` into Groovy template code before the template is compiled. They provide a declarative syntax for common control structures. All generator tags require explicit opening and closing tags.
 
-### `<g:if>`
-
-Conditional rendering. The `condition` attribute accepts a Groovy expression, a `$variable` reference, or a `storeName#flagPath` Cargo reference.
-
-```html
-<g:if condition="${ client.authenticated }">
-    <p>Welcome back!</p>
-</g:if>
-```
-
-```html
-<g:if condition="myStore#user.isAdmin">
-    <p>Admin panel</p>
-</g:if>
-```
-
-### `<g:elseif>`
-
-Else-if branch. Must follow a `<g:if>` or another `<g:elseif>`.
-
-```html
-<g:if condition="${ role == 'admin' }">
-    <p>Admin view</p>
-</g:if>
-<g:elseif condition="${ role == 'editor' }">
-    <p>Editor view</p>
-</g:elseif>
-```
-
-### `<g:else>`
-
-Else branch. Must follow a `<g:if>` or `<g:elseif>`.
-
-```html
-<g:if condition="${ items.size() > 0 }">
-    <p>Found items</p>
-</g:if>
-<g:else>
-    <p>No items found</p>
-</g:else>
-```
+For conditional rendering, use standard Groovy template scriptlets (`<% if (...) { %> ... <% } %>`).
 
 ### `<g:each>`
 
@@ -346,16 +306,6 @@ Repeats the body a fixed number of times.
     <div class='star'>&#9733;</div>
 </g:repeat>
 ```
-
-### `<g:flag>`
-
-Outputs the value of a Cargo flag. The `path` attribute uses the `storeName#flagPath` syntax.
-
-```html
-<g:flag path="myStore#user.name"></g:flag>
-```
-
-This is equivalent to `<%= Cargo.fromStore("myStore").get("user.name") %>`.
 
 ### `<g:javascript>`
 
@@ -460,23 +410,6 @@ Lines starting with `///` (triple slash, optionally preceded by whitespace) are 
     /// Works in embedded JavaScript too
     var x = 42;
 </script>
-```
-
----
-
-## CSS Class Shorthand
-
-Tags support a dot-notation shorthand for CSS classes, similar to Emmet syntax:
-
-```html
-<!-- These are equivalent -->
-<div.container.padded>Content</div>
-<div class='container padded'>Content</div>
-
-<!-- Works with any tag -->
-<section.hero.centered>
-    <h1.title>Hello</h1>
-</section>
 ```
 
 ---

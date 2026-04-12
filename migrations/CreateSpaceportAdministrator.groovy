@@ -17,13 +17,8 @@ Command.with {
     and a 'users' database if they do not already exist.
     """)
 
-    // Check for database, and create it if it does not exist.
-
-    if (!Spaceport.main_memory_core.containsDatabase('users')) {
-        Spaceport.main_memory_core.createDatabase('users')
-
-        success("Created 'users' database.")
-    }
+    // Ensure the users database exists
+    Spaceport.main_memory_core.createDatabaseIfNotExists('users')
 
     // Get a username and password from the user.
 

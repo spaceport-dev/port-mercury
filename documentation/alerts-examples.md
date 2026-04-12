@@ -215,8 +215,7 @@ class Job {
 
     @Alert('on initialized')
     static _init(Result r) {
-        if (!Spaceport.main_memory_core.containsDatabase('jobs'))
-            Spaceport.main_memory_core.createDatabase('jobs')
+        Spaceport.main_memory_core.createDatabaseIfNotExists('jobs')
 
         ViewDocument.get('jobs', 'jobs').setViewIfNeeded(
             'list-jobs', /* language=javascript */ '''

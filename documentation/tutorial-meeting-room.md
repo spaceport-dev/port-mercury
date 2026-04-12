@@ -132,8 +132,7 @@ Add a view setup method to the `Booking` class, inside the class body, after the
     static _setupViews(Result r) {
 
         // Create the 'bookings' database if it does not exist
-        if (!spaceport.Spaceport.main_memory_core.containsDatabase('bookings'))
-            spaceport.Spaceport.main_memory_core.createDatabase('bookings')
+        spaceport.Spaceport.main_memory_core.createDatabaseIfNotExists('bookings')
 
         // Define a view that indexes bookings by date
         ViewDocument.get('views', 'bookings')
@@ -190,8 +189,7 @@ class Booking extends Document {
     @Alert('on initialized')
     static _setupViews(Result r) {
 
-        if (!spaceport.Spaceport.main_memory_core.containsDatabase('bookings'))
-            spaceport.Spaceport.main_memory_core.createDatabase('bookings')
+        spaceport.Spaceport.main_memory_core.createDatabaseIfNotExists('bookings')
 
         ViewDocument.get('views', 'bookings')
             .setViewIfNeeded('by-date', '''

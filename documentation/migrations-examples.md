@@ -21,10 +21,7 @@ Command.with {
     """)
 
     // Ensure the users database exists
-    if (!Spaceport.main_memory_core.containsDatabase('users')) {
-        Spaceport.main_memory_core.createDatabase('users')
-        success("Created 'users' database.")
-    }
+    Spaceport.main_memory_core.createDatabaseIfNotExists('users')
 
     // Prompt for a username
     def username, password
@@ -79,7 +76,7 @@ Command.with {
 ```
 
 **Key patterns demonstrated:**
-- Checking for database existence before creating it (idempotency).
+- Using `createDatabaseIfNotExists()` for idempotent database creation.
 - Checking for document existence before creating it.
 - Handling the "already exists" case by offering promotion.
 - Password confirmation loop.
@@ -165,19 +162,15 @@ Command.with {
     def databases = ['products', 'orders', 'inventory']
 
     databases.each { dbName ->
-        if (!Spaceport.main_memory_core.containsDatabase(dbName)) {
-            Spaceport.main_memory_core.createDatabase(dbName)
-            success("Created '${dbName}' database.")
-        } else {
-            success("'${dbName}' database already exists. Skipping.")
-        }
+        Spaceport.main_memory_core.createDatabaseIfNotExists(dbName)
+        success("Ensured '${dbName}' database exists.")
     }
 }
 ```
 
 **Key patterns demonstrated:**
 - Iterating over a list of required databases.
-- Idempotent creation with existence checks.
+- Using `createDatabaseIfNotExists()` for idempotent creation.
 
 
 ## Seed Data into a Database
@@ -199,10 +192,7 @@ Command.with {
     def dbName = 'categories'
 
     // Ensure database exists
-    if (!Spaceport.main_memory_core.containsDatabase(dbName)) {
-        Spaceport.main_memory_core.createDatabase(dbName)
-        success("Created '${dbName}' database.")
-    }
+    Spaceport.main_memory_core.createDatabaseIfNotExists(dbName)
 
     // Define seed data
     def categories = [
@@ -307,10 +297,7 @@ Command.with {
     }
 
     // Ensure users database exists
-    if (!Spaceport.main_memory_core.containsDatabase('users')) {
-        Spaceport.main_memory_core.createDatabase('users')
-        success("Created 'users' database.")
-    }
+    Spaceport.main_memory_core.createDatabaseIfNotExists('users')
 
     if (Document.exists(username, 'users')) {
         success("User '${username}' already exists. Skipping creation.")

@@ -137,8 +137,7 @@ class Job extends Document {
     @Alert('on initialized')
     static _init(Result r) {
         // Ensure database exists
-        if (!Spaceport.main_memory_core.containsDatabase('jobs'))
-            Spaceport.main_memory_core.createDatabase('jobs')
+        Spaceport.main_memory_core.createDatabaseIfNotExists('jobs')
 
         // Register view (only writes to CouchDB if the function changed)
         ViewDocument.get('jobs', 'jobs').setViewIfNeeded(
@@ -185,6 +184,11 @@ class Job extends Document {
             String status
             Long dateCreated
         }
+
+        // Load the full document on demand
+        Job getDocument() {
+            return Job.getIfExists(id, 'jobs') as Job
+        }
     }
 
     // Query the view and return typed results
@@ -207,8 +211,10 @@ jobs.each { row ->
     println "${row.value.jobId}: ${row.value.client} - ${row.value.status}"
 }
 
-// Load the full document when you need it
-def fullJob = Document.get(jobs.first().id, 'jobs') as Job
+// Load the full document on demand via the Row's getDocument() method
+def fullJob = jobs.first().getDocument()
+fullJob.fields.notes = 'Updated from view listing'
+fullJob.save()
 ```
 
 ---
@@ -321,12 +327,11 @@ Ensure your database exists before any documents are accessed. The standard patt
 ```groovy
 @Alert('on initialized')
 static _init(Result r) {
-    if (!Spaceport.main_memory_core.containsDatabase('rate-cards'))
-        Spaceport.main_memory_core.createDatabase('rate-cards')
+    Spaceport.main_memory_core.createDatabaseIfNotExists('rate-cards')
 }
 ```
 
-This runs once when source modules are loaded (and again on hot-reload in debug mode). The `containsDatabase()` check avoids errors if the database already exists.
+This runs once when source modules are loaded (and again on hot-reload in debug mode). `createDatabaseIfNotExists()` is idempotent -- it only creates the database if it does not already exist.
 
 ---
 
@@ -462,8 +467,7 @@ class RateCard extends Document {
 
     @Alert('on initialized')
     static _init(Result r) {
-        if (!Spaceport.main_memory_core.containsDatabase('rate-cards'))
-            Spaceport.main_memory_core.createDatabase('rate-cards')
+        Spaceport.main_memory_core.createDatabaseIfNotExists('rate-cards')
 
         ViewDocument.get('rate-cards', 'rate-cards').setViewIfNeeded(
             'list-rate-cards', /* language=javascript */ '''

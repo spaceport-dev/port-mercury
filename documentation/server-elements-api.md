@@ -382,7 +382,7 @@ Elements are referenced using the `g:` prefix followed by the kebab-case element
 </g:element-name>
 ```
 
-Elements must have both opening and closing tags. Self-closing syntax (`<g:element-name />`) is also supported -- the template engine converts it to an open/close pair automatically.
+Elements must have both opening and closing tags.
 
 ### Attribute Passing
 

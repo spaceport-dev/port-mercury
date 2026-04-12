@@ -283,7 +283,7 @@ Prints a section header with formatting.
 
 ## Database APIs
 
-Migration scripts have full access to Spaceport's database layer through the same APIs used in application code.
+Migration scripts have full access to Spaceport's core database layer. Note that only built-in Spaceport classes are available -- project-specific modules are not loaded in the migration runtime.
 
 ### `Spaceport.main_memory_core`
 
@@ -298,10 +298,7 @@ The configured CouchDB connection handler (`CouchHandler`), initialized from the
 **Example:**
 
 ```groovy
-if (!Spaceport.main_memory_core.containsDatabase('products')) {
-    Spaceport.main_memory_core.createDatabase('products')
-    success("Created 'products' database.")
-}
+Spaceport.main_memory_core.createDatabaseIfNotExists('products')
 ```
 
 ### `Document`
@@ -379,6 +376,7 @@ if (user) {
 - **Debug mode:** Debug output is enabled by default (`Spaceport.store._debug = true`).
 - **Default configuration:** If `--no-manifest` is used, a default configuration is applied with CouchDB at `http://127.0.0.1:5984`, port `10000`, and standard paths.
 - **Environment variables:** Placeholders in the form `${VAR_NAME}` in the manifest are replaced with actual environment variable values before the migration runs.
+- **Project modules are not loaded.** The migration runtime does not compile or load source modules from your `modules/` directory. Stowaway JARs are also not loaded. Only core Spaceport classes are available. All migration logic must be self-contained within the script -- use closures, inline definitions, or standard Groovy/Java libraries for any helper logic.
 
 
 ## See Also

@@ -128,8 +128,7 @@ static _index(HttpResult r) {
 @Alert('on initialized')
 static _init(Result r) {
     // Set up CouchDB databases and views
-    if (!Spaceport.main_memory_core.containsDatabase('myapp'))
-        Spaceport.main_memory_core.createDatabase('myapp')
+    Spaceport.main_memory_core.createDatabaseIfNotExists('myapp')
 }
 ```
 
