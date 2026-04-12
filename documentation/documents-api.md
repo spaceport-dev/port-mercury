@@ -558,7 +558,7 @@ def results = View.get('my-views', 'by-author', 'articles')
 
 #### `getWithDocuments(String document_id, String view_id, String database)`
 
-> **Note:** This method is experimental and not yet recommended for production use. Prefer the [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `getDocument()` method on your Row class, which gives you typed results and loads full documents on demand rather than eagerly.
+> **Note:** This method is experimental and not yet recommended for production use. Prefer the [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `grabDocument()` method on your Row class, which gives you typed results and loads full documents on demand rather than eagerly.
 
 Queries the view with `include_docs=true`, so each row contains the full document. Use `getDocuments()` on the result to get `Document` objects.
 
@@ -600,7 +600,7 @@ def results = View.get('my-views', 'by-author', 'articles', [
 
 #### `getDocuments()`
 
-> **Note:** This method is experimental. Prefer the [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `getDocument()` method on your Row class for typed, on-demand document loading.
+> **Note:** This method is experimental. Prefer the [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `grabDocument()` method on your Row class for typed, on-demand document loading.
 
 Converts the view rows into `Document` objects. If the view was queried with `include_docs=true`, deserializes the embedded documents. Otherwise, fetches each document by `_id`.
 

@@ -186,19 +186,19 @@ class Job extends Document {
         }
 
         // Load the full document on demand
-        Job getDocument() {
+        Job grabDocument() {
             return Job.getIfExists(id, 'jobs') as Job
         }
     }
 
     // Query the view and return typed results
-    static List<Row> getAllJobs() {
+    static List<Row> grabAllJobs() {
         return View.get('jobs', 'list-jobs', 'jobs').rows as List<Row>
     }
 
     // Filter helpers
-    static List<Row> getActiveJobs() {
-        return getAllJobs().findAll { it.value.status != 'Complete' }
+    static List<Row> grabActiveJobs() {
+        return grabAllJobs().findAll { it.value.status != 'Complete' }
     }
 }
 ```
@@ -206,13 +206,13 @@ class Job extends Document {
 Usage in a route handler or template:
 
 ```groovy
-def jobs = Job.getAllJobs()
+def jobs = Job.grabAllJobs()
 jobs.each { row ->
     println "${row.value.jobId}: ${row.value.client} - ${row.value.status}"
 }
 
-// Load the full document on demand via the Row's getDocument() method
-def fullJob = jobs.first().getDocument()
+// Load the full document on demand via the Row's grabDocument() method
+def fullJob = jobs.first().grabDocument()
 fullJob.fields.notes = 'Updated from view listing'
 fullJob.save()
 ```
@@ -230,7 +230,7 @@ import spaceport.computer.memory.virtual.Cargo
 class Job extends Document {
 
     // Returns REACTIVE Cargo wrapping the current job list
-    static Cargo getCurrentJobs() {
+    static Cargo grabCurrentJobs() {
         def current = Cargo.fromStore('job-list')
         current.set(View.get('jobs', 'list-jobs', 'jobs').rows as List<Row>)
         return current
@@ -242,7 +242,7 @@ In a Launchpad template, this Cargo can be used with reactive bindings:
 
 ```html
 <%
-    def jobs = Job.getCurrentJobs()
+    def jobs = Job.grabCurrentJobs()
 %>
 <ul>
     ${{ jobs.get().combine { """
@@ -315,7 +315,7 @@ For Cargo-based reactive lists, call `_update()` on the Cargo object:
 ```groovy
 // After saving a job, update the reactive job list
 job.save()
-Job.currentJobs._update()  // Re-renders any template using getCurrentJobs()
+Job.currentJobs._update()  // Re-renders any template using grabCurrentJobs()
 ```
 
 ---
@@ -496,14 +496,14 @@ class RateCard extends Document {
 
     // -- Reactive querying --
 
-    static Cargo getCurrentRateCards() {
+    static Cargo grabCurrentRateCards() {
         def current = Cargo.fromStore('rate-cards')
         current.set(View.get('rate-cards', 'list-rate-cards', 'rate-cards').rows)
         return current
     }
 
     static RateCard getByName(String name) {
-        def list = getCurrentRateCards().get()
+        def list = grabCurrentRateCards().get()
         def row = list.find { it.key.toLowerCase() == name.toLowerCase() }
         return row ? get(row.id, 'rate-cards') as RateCard : null
     }
