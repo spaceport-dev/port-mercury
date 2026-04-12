@@ -54,5 +54,16 @@ curl -L https://spaceport.sh/builds/spaceport-latest.jar -o spaceport.jar
 ```
 
 
+## AI-Assisted Development
+
+This starter kit includes a `documentation/` folder with the complete Spaceport framework documentation, which works great with AI coding assistants like [Claude Code](https://claude.ai/claude-code).
+
+For the best experience, see [SETUP-AGENTS.md](SETUP-AGENTS.md) for two options:
+- **Quick setup** — add a lightweight Spaceport Consultant agent to your project
+- **Full setup** — install the [claude-spaceport-support](https://github.com/spaceport-dev/claude-spaceport-support) plugin for six specialized agents
+
+Starting a brand-new project from scratch? Consider [agentic](https://github.com/spaceport-dev/agentic) instead — it bootstraps a full project with AI tooling built in.
+
+
 ## Learn more
 For more information about Spaceport, visit the [Spaceport documentation](https://spaceport.sh/docs).
