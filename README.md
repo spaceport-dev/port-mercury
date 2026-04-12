@@ -62,7 +62,7 @@ For the best experience, see [SETUP-AGENTS.md](SETUP-AGENTS.md) for two options:
 - **Quick setup** — add a lightweight Spaceport Consultant agent to your project
 - **Full setup** — install the [claude-spaceport-support](https://github.com/spaceport-dev/claude-spaceport-support) plugin for six specialized agents
 
-Starting a brand-new project from scratch? Consider [agentic](https://github.com/spaceport-dev/agentic) instead — it bootstraps a full project with AI tooling built in.
+Starting a brand-new project from scratch? Consider [create-spaceport-app](https://github.com/spaceport-dev/create-spaceport-app) instead — it bootstraps a full project with AI tooling built in.
 
 
 ## Learn more

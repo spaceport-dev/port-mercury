@@ -85,4 +85,4 @@ The plugin provides the same documentation reference plus agents for routing, te
 
 ## Starting from Scratch?
 
-If you're starting a brand-new project and want the full AI-bootstrapped experience, consider [agentic](https://github.com/spaceport-dev/agentic) — it scaffolds a new Spaceport project with six agents, documentation, and project-specific configuration baked in from the start.
+If you're starting a brand-new project and want the full AI-bootstrapped experience, consider [create-spaceport-app](https://github.com/spaceport-dev/create-spaceport-app) — it scaffolds a new Spaceport project with six agents, documentation, and project-specific configuration baked in from the start.
