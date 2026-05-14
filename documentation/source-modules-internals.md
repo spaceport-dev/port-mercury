@@ -60,7 +60,7 @@ When `SourceStore.hasLoaded` is `true`, a full teardown occurs before loading ne
 5. SpaceportClassLoader.innerLoader = null -- release inner loader reference
 6. classLoader = null                     -- release outer loader reference
 7. SpaceportTemplateEngine.templateCache.clear()  -- purge compiled template cache
-8. Launchpad.elements.clear()             -- purge server element cache
+8. Launchpad.clearAllElements()           -- purge per-instance maps + shared pool
 9. CouchHandler.cachedDocuments.clear()   -- purge document cache
 ```
 
@@ -170,7 +170,7 @@ During a hot-reload, five distinct caches are cleared:
 | Class cache | `SpaceportClassLoader.classCache` | Compiled class objects keyed by name |
 | Source cache | `SpaceportClassLoader.sourceCache` | Compiled class objects keyed by source file |
 | Template cache | `SpaceportTemplateEngine.templateCache` | Compiled `.ghtml` template classes |
-| Element cache | `Launchpad.elements` | Server element instances |
+| Element cache | Each `launchpad.elements` + `Launchpad.sharedPool` + `Launchpad.poolOwners` (cleared via `Launchpad.clearAllElements()`) | Server element class registrations |
 | Document cache | `CouchHandler.cachedDocuments` | Document objects loaded from CouchDB |
 
 All five caches must be cleared because they may hold references to old class definitions. If the template cache retained a compiled template that references `documents.Guestbook`, and the `Guestbook` class was reloaded into a new classloader, the template would hold a stale class reference, leading to `ClassCastException` at runtime.

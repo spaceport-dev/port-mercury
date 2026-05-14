@@ -188,6 +188,8 @@ def n = name.replace('-','_').replace('.','_') + '_' + counter++ + ".ghtml.groov
 template.script = this.groovyShell.parse(script, n)
 ```
 
+The engine itself receives a `Launchpad` reference (`new SpaceportTemplateEngine(launchpad).createTemplate(filePath, text)`) so that compile-time `<g:>` resolution can use `launchpad.resolveElement(name)` — meaning each slice's templates see its own local elements plus the shared pool. The no-arg constructor still works for callers without a Launchpad context; those fall back to the shared pool only.
+
 The script is given a generated name like `index_ghtml_42.ghtml.groovy` for stack trace readability. The monotonically increasing counter ensures unique class names even when the same template is recompiled. Compilation errors at this stage indicate syntax problems in the template's Groovy code (after all preprocessing transformations).
 
 ### Stage 5: Caching
@@ -211,6 +213,10 @@ This means:
 - **Subsequent requests with unchanged file** -- Cache hit. Only the file read occurs; all processing is skipped.
 - **Requests after file modification** -- Hash mismatch triggers full recompilation and cache update.
 
+The cache is also cleared whenever new Elements are registered into a Launchpad. Without this, templates compiled before a new Element existed would still report `<!-- SpaceportTemplateEngine: Unknown tag: foo -->` even after `<g:foo>` became valid — only an actual template-content change would force a recompile that picked up the new tag. The cache-clear on element registration makes this transparent in dev mode.
+
+**Known limitation.** `templateCache` is keyed on template name/hash, not on Launchpad. If the *same template path* gets compiled from two different Launchpads with diverging element-visibility views, the cache could return a placeholder-baked version meant for the other Launchpad. In practice each Launchpad has its own source path (so template file paths naturally differ), but it's worth knowing if include/share patterns cross Launchpad boundaries.
+
 ### Stage 6: Execution (SpaceportTemplate.make)
 
 When `prime()` calls `template.make(scriptBinding)`, the template creates a `Writable` that performs the actual rendering:
@@ -226,7 +232,11 @@ When `prime()` calls `template.make(scriptBinding)`, the template creates a `Wri
 
 ## The Binding System
 
-All templates rendered in a single `launch()` call share a `Binding` object. When `launch()` begins, it populates the binding with request-scoped variables:
+All templates rendered in a single `launch()` call share a `Binding` object backed by a per-Launchpad map. The map is `Collections.synchronizedMap([:])` (not a `ConcurrentHashMap`) because the `def`-strip mechanism routes top-level template variables through `Binding.setVariable`, which can legitimately store `null` values — e.g. `<% def foo = something?.maybeMissing %>` when `something` is null. A `ConcurrentHashMap` would NPE on that write per its no-null contract. The synchronized HashMap preserves the coarse-grained thread-safety the binding needs for concurrent websocket-event paths without the null restriction.
+
+> **Migration note.** The binding's underlying map type changed from `ConcurrentHashMap` to `Collections.synchronizedMap`. All call sites interact through the `Map` interface, so no other code needs to change. The other ConcurrentHashMaps on Launchpad (`bindingSatellites`, `elements` instance, `sharedPool`, `poolOwners`, `byName`, the per-binding `_reactions` / `_bindings` sub-maps) keep their types — they're pointer registries keyed by UUID or name with object values, and don't need to accept nulls.
+
+When `launch()` begins, it populates the binding with request-scoped variables:
 
 ```groovy
 binding.putAll([
@@ -326,6 +336,13 @@ Key behaviors:
 - **Property writes** record the property name and set the real value.
 - **Method calls** record the method name. Critically, if the method resolves to a Closure property on the underlying object, the Closure is cloned with `Catch` set as its delegate. This means nested closures within a reactive expression also have their dependencies tracked recursively.
 - The `caught` property itself is exempted from tracking (returns the raw set).
+
+### Reactivity model — important properties
+
+Two pieces of how reactivity works are worth knowing:
+
+- **Tracking is by variable name.** `caught` is a `HashSet<String>` of property/method names accessed during evaluation. Reactions store the set of names they touched on first evaluation as `_triggers`. The dispatcher fires reactions whose triggers intersect the current action's caught names. No value-based identity tracking, no proxy objects — purely string-keyed.
+- **Cargo manages its own reactivity.** The reaction dispatcher explicitly skips reactions whose result is a `Cargo` instance; Cargo has its own parent/document propagation, so the standard reaction loop steps aside.
 
 ### How Reactive Bindings (Launch Reactions) Work
 
@@ -584,7 +601,9 @@ The injected client-side script handles three types of incoming messages:
 
 - **`SpaceportTemplateEngine.templateCache`** is a `ConcurrentHashMap`. If two requests compile the same template simultaneously, both complete and the last write wins. Since both produce identical output from the same source text, this race is harmless.
 
-- **`Launchpad.elements`** is a `ConcurrentHashMap`, safe for concurrent Server Element registration and lookup.
+- **`launchpad.elements` (per-instance)** and **`Launchpad.sharedPool` / `Launchpad.poolOwners` / `Launchpad.byName` (static)** are all `ConcurrentHashMap`s, safe for concurrent Server Element registration and lookup.
+
+- **`binding`** (the per-Launchpad script-binding map) is `Collections.synchronizedMap([:])` rather than `ConcurrentHashMap` because templates legitimately store `null` values via the `def`-strip mechanism (a `ConcurrentHashMap` would NPE per its no-null contract). The synchronized HashMap preserves coarse-grained thread-safety for the websocket-event paths.
 
 - **Per-request isolation** -- Each request gets its own `Binding` object (created in the `Launchpad` constructor) with its own `_reactions` and `_bindings` maps (both `ConcurrentHashMap`). There is no shared mutable state between concurrent requests during the render phase.
 
@@ -610,21 +629,23 @@ if (!reloading) {
     Thread.start {
         Thread.sleep(100)
         SpaceportTemplateEngine.templateCache.clear()
-        elements.clear()
+        clearAllElements()       // per-instance maps + shared pool + pool owners
         reloading = false
     }
 }
 ```
 
-The 100ms sleep allows a batch of file changes (e.g., an IDE saving multiple files) to trigger only one cache clear rather than one per file.
+`clearAllElements()` iterates `Launchpad.byName.values()` and clears each Launchpad's `elements` map, then clears `sharedPool` and `poolOwners`. The 100ms sleep allows a batch of file changes (e.g., an IDE saving multiple files) to trigger only one clear rather than one per file.
 
 ### What Gets Reloaded
 
 | Changed File | Effect |
 |---|---|
 | `.ghtml` templates | Recompiled on next access (template cache was cleared) |
-| `.groovy` Server Elements | Re-parsed and re-registered on next Launchpad instantiation (elements map was cleared, and the constructor re-scans when the map is empty) |
+| `.groovy` Server Elements | Re-parsed and re-registered on next Launchpad construction. Every Launchpad's `elements` map is empty, so each one re-scans its own `elements/` directory on its next instantiation. |
 | Other files in the launchpad directory | Cache is still cleared (the Beacon watches all file types) |
+
+In addition to the file-watch path, the template cache is cleared **each time a Launchpad finishes installing its Elements**, regardless of debug mode. This guarantees that adding a new Element file doesn't leave templates compiled against an older view of the registry.
 
 ### Limitations
 
@@ -639,23 +660,31 @@ The 100ms sleep allows a batch of file changes (e.g., an IDE saving multiple fil
 
 Server Elements are custom `<g:tag-name>` components defined as Groovy classes in the `elements/` directory. Their lifecycle is deeply integrated with the Launchpad pipeline.
 
-### Registration
+### Registration (per-Launchpad)
 
-During `Launchpad` construction, if the static `elements` map is empty, all `.groovy` files in `sourcePath + 'elements/'` are loaded:
+Each Launchpad has its **own** `elements` map (instance field), and contributes to the static cross-Launchpad `sharedPool` according to ownership rules. During `Launchpad` construction, unless the elements map has been inherited from a same-source-path predecessor (the `assemble()` case), all `.groovy` files in `this.sourcePath + 'elements/'` are loaded through a **single shared `GroovyClassLoader`** so sibling Element classes can reference each other by class name:
 
 ```groovy
-for (def element in new File(sourcePath + 'elements').listFiles()) {
+def elementLoader = new GroovyClassLoader(SourceStore.classLoader)
+for (def element in new File(this.sourcePath + 'elements').listFiles()) {
     if (element.name.endsWith('.groovy')) {
         def text = element.text
         // Apply ${{ }} syntactic sugar
         text = text.replaceAll(/\$\{\{\s*/, '\\${ _{ _script, _registration -> ')
-        def clazz = new GroovyClassLoader(SourceStore.classLoader).parseClass(text)
-        elements.put(element.name.replace('.groovy', '').kebab(), clazz)
+        def clazz = elementLoader.parseClass(text)
+        def tagName = element.name.replace('.groovy', '').kebab()
+        this.elements.put(tagName, clazz)         // per-instance local
+        contributeToSharedPool(tagName, clazz)    // ownership-aware
     }
 }
+SpaceportTemplateEngine.templateCache.clear()
 ```
 
-The filename is converted to kebab-case for the tag name (e.g., `StatCard.groovy` becomes `stat-card`, `TagInput.groovy` becomes `tag-input`).
+The filename is converted to kebab-case for the tag name (e.g., `StatCard.groovy` becomes `stat-card`, `TagInput.groovy` becomes `tag-input`). Path normalization is the trailing-slash-aware `this.sourcePath`, so passing a path without a trailing slash to the constructor no longer silently lands on a nonexistent directory.
+
+### Multi-Launchpad resolution
+
+Resolution from a rendering Launchpad walks: local map → shared pool → unknown. The shared pool is global-prefers-global, with slice-vs-slice collisions evicting the name entirely. A qualified `<g:slice/element>` tag bypasses both layers and reaches into a named Launchpad's local map directly. See the [Launchpad API reference](launchpad-api.md#multi-launchpad-element-resolution) for the full rules and worked examples.
 
 ### Tag Processing in SpaceportTemplateEngine
 
@@ -669,33 +698,38 @@ The element's ID and name are stored in the template's `elements` map for later 
 
 ### Element Instantiation in prime()
 
-After a template is rendered, if it contained Server Element tags, `prime()` scans the rendered HTML for handler markers (`<!-- id-handler -->`) and creates element instances:
+After a template is rendered, if it contained Server Element tags, `prime()` scans the rendered HTML for handler markers (`<!-- id-handler -->`) and creates element instances. Element class resolution honors the qualified `<g:slice/element>` syntax (when the engine saw one, it stashed a `launchpadName` field on the entry):
 
 ```groovy
-Element newElement = Launchpad.elements[e.name].newInstance()
+Class elementClass = resolveForEntry(e)   // local → shared pool, or qualified slice's local map
+if (elementClass == null) continue
+Element newElement = elementClass.newInstance()
 newElement.launchpad = this
 newElement.client = binding.client
 newElement.dock = binding.dock
 newElement._id = 6.randomID()
 ```
 
-Elements are added to `binding._elements`. Elements that appear inside reactive closures may be "stashed" in `binding._stashed_elements` for later processing during `parseElements()`.
+Elements are added to `binding._elements`. **Every** `template.elements` entry — not just those missing from the primed output — is also copied into `binding._stashed_elements` as a recipe. `parseElements()` uses these recipes via the `reconcileMarkerCount` pass to spin up additional instances when handler markers in the payload outnumber the existing entries (the reactive-update-grew case as well as the conditional-finally-rendered case).
 
 ### Element Rendering in parseElements()
 
-The `parseElements()` method runs after all templates are primed and the vessel is assembled. It processes each registered element:
+The `parseElements()` method runs after all templates are primed and the vessel is assembled. Before the main loop, it calls `reconcileMarkerCount(html)` to spin up any Element instances needed to cover handler markers currently in the HTML — this handles both the "stashed-on-first-appearance" case (an Element inside a conditional that finally rendered) and the "reactive update grew the list" case (a `${{ items.combine { '<g:row>...' } }}` whose `items` grew past its initial size). See the [Server Elements internals](server-elements-internals.md#stashed-elements-reactive-updates-and-marker-reconciliation) for the full reconcile mechanism.
 
-1. **Attribute extraction** -- Parses HTML attributes from the element's rendered tag using regex matching.
+The main loop processes each registered element:
+
+1. **Attribute extraction** -- Parses HTML attributes from the element's rendered tag using regex matching. The tag-end scan respects quoted attribute values, so a `>` inside `title="<i>x</i>"` doesn't truncate the opening tag.
 2. **Server-side attribute resolution** -- Attributes whose values are server action URLs (starting with `/!/`) but are not `on-*` event attributes are resolved immediately by calling the associated binding closure. The result replaces the URL.
-3. **Typed accessor injection** -- The attributes map is enhanced with `getNumber`, `getBool`, `getString`, `getList`, and `getInteger` methods (same as the transmission object).
+3. **Typed accessor injection** -- The attributes map is enhanced with `getNumber`, `getBool`, `getString`, `getList`, and `getInteger` methods (same as the transmission object). Bare boolean attributes (e.g. `<g:btn disabled>`) capture as `"true"`.
 4. **Prerender** -- `element.prerender(body, attributes)` is called. The element transforms its body content based on attributes.
-5. **Initialize** -- `element.initialize()` is called. The element builds its CSS, JavaScript event handlers, and any other runtime setup.
-6. **Style injection** -- The `<!-- id-styles -->` comment is replaced with the element's `_style` (global CSS) and `_scopedStyle` (instance-scoped CSS).
-7. **Handler injection** -- The `<!-- id-handler -->` comment is replaced with the element's `_handler` (JavaScript).
-8. **Tag replacement** -- The placeholder tag `<id>` is replaced with the actual element tag `<tag-name element-id="rid">`.
-9. **Prepend/append** -- Global prepend content is inserted before `</head>` (or at the start of the HTML). Global append content is inserted after `</body>`. Scoped prepend/append content is inserted adjacent to individual element instances.
+5. **Nested element scan** -- The string returned by `prerender()` is scanned by `processNestedElements()` for `<g:>` tags. Each tag found gets a fresh Element instance registered into `binding._elements` and is inlined as the same placeholder markup the template engine would have produced at compile time, so the outer loop picks them up on subsequent passes.
+6. **Initialize** -- `element.initialize()` is called. The element builds its CSS, JavaScript event handlers, and any other runtime setup.
+7. **Style injection** -- The `<!-- id-styles -->` comment is replaced with the element's CSS. Global `_style` (from `@CSS`) is emitted once per element type per response; per-instance `_scopedStyle` (from `@ScopedCSS`) is emitted for every instance.
+8. **Handler injection** -- The `<!-- id-handler -->` comment is replaced with the element's `_handler` (JavaScript).
+9. **Tag replacement** -- The placeholder tag `<id>` is replaced with the actual element tag `<tag-name element-id="rid">`.
+10. **Prepend/append** -- Global prepend content is inserted before `</head>` (or at the start of the HTML). Global append content is inserted after `</body>`. Scoped prepend/append content is inserted adjacent to individual element instances.
 
-The processing loop runs repeatedly until no more replacements occur, handling the case where element prerendering introduces new elements (nested elements).
+The processing loop is capped at **16 passes** to defend against an Element whose `prerender()` accidentally emits its own `<g:>` tag (a true cycle would otherwise loop forever). When the cap is hit, the loop terminates safely — the offending Element doesn't render, but the server doesn't hang.
 
 ### Element WebSocket Communication
 

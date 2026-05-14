@@ -1550,6 +1550,71 @@ class LogoScroller implements Element {
 
 ---
 
+## Composing Elements From Other Elements
+
+Element classes in a single Launchpad's `elements/` directory share one classloader, so they can reference each other by class name. And the string returned by `prerender()` is scanned for `<g:>` tags — so an Element can both call sibling helpers and include sibling Elements declaratively.
+
+**`Sidebar.groovy`** — exposes a static helper plus its own `<g:sidebar>` Element:
+
+```groovy
+import spaceport.launchpad.element.*
+
+class Sidebar implements Element {
+
+    // Static helper any sibling Element may call.
+    static String renderHtml(client, String currentPath) {
+        def links = [['/', 'Home'], ['/jobs', 'Jobs'], ['/admin', 'Admin']]
+        return links.combine { href, label -> """
+            <a href='${href}' class='${href == currentPath ? "active" : ""}'>${label}</a>
+        """ }
+    }
+
+    @CSS static String styles = """
+        & { display: flex; flex-direction: column; gap: 0.5em; }
+        a.active { font-weight: 700; }
+    """
+
+    String prerender(String body, Map attributes) {
+        return renderHtml(client, attributes.path ?: '/')
+    }
+}
+```
+
+**`Page.groovy`** — both calls `Sidebar.renderHtml(...)` directly *and* emits a `<g:sidebar>` tag inside its prerender output. Both paths are handled correctly:
+
+```groovy
+class Page implements Element {
+
+    String prerender(String body, Map attributes) {
+        def title = attributes.title ?: 'Untitled'
+
+        // Both forms work:
+        //   1. Static call → cross-element reference via shared classloader.
+        //   2. <g:sidebar> tag in returned HTML → picked up by processNestedElements.
+        return """
+            <header><h1>${title}</h1></header>
+            <g:sidebar path="${attributes.path ?: ''}"></g:sidebar>
+            <main>${body}</main>
+        """
+    }
+}
+```
+
+**Template usage:**
+
+```html
+<g:page title="Dashboard" path="/jobs">
+    <p>Welcome to the dashboard.</p>
+</g:page>
+```
+
+**Patterns demonstrated:**
+- **Static cross-element references.** `Sidebar.renderHtml(...)` is callable from `Page` because both classes loaded into the same `GroovyClassLoader`. Earlier framework versions used a throwaway loader per Element, which forced this kind of shared helper to live in `modules/`.
+- **`<g:>` tags inside prerender output.** The framework scans the returned HTML after `prerender()` runs, instantiates an Element for each `<g:>` tag it finds, and gives it the full lifecycle (CSS dedup, handler injection, recursion). Outer-loop pass count is capped at 16, so a self-emitting Element terminates safely rather than hanging.
+- **Choosing between the two.** Use the static method when you just need a string of HTML (no scoped CSS or handlers); use the nested `<g:>` form when you want the sibling Element's full lifecycle (its own CSS, JS, attributes).
+
+---
+
 ## Common Patterns and Conventions
 
 ### Use `static` for Shared CSS

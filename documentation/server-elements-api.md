@@ -76,12 +76,14 @@ You should not normally call this method directly. It is invoked by the framewor
 
 #### `getTagName()`
 
-Returns the kebab-case version of the class's simple name. Used as the HTML tag name in the rendered output.
+Returns the kebab-case version of the class's simple name. Used as the HTML tag name in the rendered output and as the form that matches `<g:foo-bar>` tags in templates.
 
 ```groovy
 // For class StarRating:
 getTagName() // returns "star-rating"
 ```
+
+Distinct from the static `getName()` below: for multi-word class names, `getTagName()` is kebab-case and `getName()` is the lowercase concatenation. For single-word names the two are identical.
 
 #### `grab(String reactiveVariableName)`
 
@@ -105,7 +107,39 @@ String prerender(String body, Map attributes) {
 
 #### `getName()` (static)
 
-Returns the lowercase version of the class's simple name.
+Returns the lowercase concatenation of the class's simple name. `StarRating` → `"starrating"`. This is **not** the form that matches `<g:>` tags — use `getTagName()` for the kebab-case version (`"star-rating"`) used in templates.
+
+For single-word class names (`Counter`, `Highlight`) the two methods return the same value; they diverge only on multi-word names.
+
+#### Cross-Element References
+
+All Element classes in a single Launchpad's `elements/` directory share one `GroovyClassLoader`, so they are mutually visible by class name. An Element's `prerender()` may call static methods or read static fields on its siblings:
+
+```groovy
+class Page implements Element {
+    String prerender(String body, Map attributes) {
+        // Sibling Element class — visible because of the shared loader.
+        String sidebarHtml = Sidebar.renderHtml(client, '/path')
+        return "<div>${sidebarHtml}<main>${body}</main></div>"
+    }
+}
+```
+
+Use this for shared rendering helpers that conceptually belong to a specific Element (e.g. `Sidebar.renderHtml(...)`). Helpers that aren't owned by any one Element can still live in `modules/`.
+
+#### Emitting `<g:>` Tags from `prerender()`
+
+The string returned by `prerender()` is scanned for `<g:>` patterns. Each tag found gets instantiated and registered into the same lifecycle as a template-authored tag — full CSS/handler injection, recursive nesting, qualified-syntax resolution. This means an Element can compose other Elements declaratively rather than concatenating their rendered HTML:
+
+```groovy
+class Page implements Element {
+    String prerender(String body, Map attributes) {
+        return "<div><g:sidebar></g:sidebar><main>${body}</main></div>"
+    }
+}
+```
+
+The outer `parseElements` loop caps at 16 passes, so a self-emitting Element (`<g:foo>` inside `foo`'s own prerender) terminates safely rather than hanging.
 
 ---
 
@@ -462,29 +496,42 @@ You can attach server actions to element tags from the template side:
 
 ### Automatic Discovery
 
-When a `Launchpad` instance is created, it scans the `launchpad/elements/` directory for `.groovy` files. Each file is:
+When a `Launchpad` instance is created, it scans its own `elements/` subdirectory for `.groovy` files. Each file is:
 
 1. Read as text
 2. Preprocessed (reactive `${{ }}` syntax is transformed)
-3. Parsed into a class using `GroovyClassLoader`
-4. Registered in the static `Launchpad.elements` map, keyed by the kebab-case name
+3. Parsed into a class using a `GroovyClassLoader` that is **shared across all Elements in this Launchpad** (so sibling Elements can reference each other by class name)
+4. Registered in the Launchpad's per-instance `elements` map, keyed by the kebab-case name
+5. Contributed to the cross-Launchpad shared pool (`Launchpad.sharedPool`) according to the ownership rules described in the [Launchpad API reference](launchpad-api.md#multi-launchpad-element-resolution)
 
-### Registration Map
+### Registration Maps
+
+Per-Launchpad local map (always checked first during resolution):
 
 ```groovy
-// Accessible as:
-Launchpad.elements  // ConcurrentHashMap<String, Class>
+launchpad.elements  // Map<String, Class>
 ```
 
-The key is the kebab-case element name (e.g., `"star-rating"`), and the value is the compiled Class object.
+Cross-Launchpad shared pool (fallback for names a Launchpad doesn't define locally):
+
+```groovy
+Launchpad.sharedPool  // ConcurrentHashMap<String, Class>
+Launchpad.poolOwners  // ConcurrentHashMap<String, String>  // name → owning Launchpad's name
+```
+
+The key is the kebab-case element name (e.g., `"star-rating"`); the value is the compiled `Class` object. Resolution from any Launchpad goes `launchpad.elements[name] ?: Launchpad.sharedPool[name]`. See the [Launchpad API reference](launchpad-api.md) for the full multi-Launchpad model and the qualified `<g:slice/element>` syntax.
+
+> **Migration note:** `Launchpad.elements` (a *static* map in earlier versions) was replaced by the per-instance `launchpad.elements`. Code that did `Launchpad.elements.put(name, cls)` should migrate to `launchpad.elements.put(name, cls)`.
 
 ### Hot Reload
 
-In debug mode, Spaceport watches the `launchpad/elements/` directory via a `Beacon` (file watcher). When any element file changes:
+In debug mode, Spaceport watches the `launchpad/` directory via a `Beacon` (file watcher). When any file changes:
 
-1. The template cache is cleared
-2. The elements map is cleared
-3. On the next request, elements are rediscovered and recompiled
+1. The template cache (`SpaceportTemplateEngine.templateCache`) is cleared
+2. All Launchpad element maps are cleared via `Launchpad.clearAllElements()` (clears per-instance maps, the shared pool, and pool ownership)
+3. On the next request, elements are rediscovered and recompiled when each Launchpad is next constructed
+
+The template cache is also cleared each time a Launchpad finishes installing its Elements — this guarantees that adding a new Element file doesn't leave templates compiled against an older view of the registry. Hot-reload does not push changes to already-connected clients; a page refresh picks up the new code.
 
 ---
 

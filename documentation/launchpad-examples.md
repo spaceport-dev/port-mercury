@@ -550,6 +550,86 @@ This creates or retrieves a Cargo instance backed by a CouchDB document and incr
 
 ---
 
+## Vertical Slicing with Multiple Launchpads
+
+A larger application can split its UI into independent **slices**, each with its own `parts/` and `elements/`. Slices live alongside a canonical `"global"` Launchpad that hosts the shared design-system kit.
+
+### Layout
+
+```
+my-app/
+  launchpad/                    <-- global Launchpad
+    parts/
+      _wrapper.ghtml
+    elements/
+      Button.groovy             (g:button)
+      Card.groovy               (g:card)
+  slices/
+    auth/                       <-- "auth" slice
+      parts/
+        login.ghtml
+      elements/
+        LoginForm.groovy        (g:login-form, local to auth)
+    admin/                      <-- "admin" slice
+      parts/
+        dashboard.ghtml
+      elements/
+        UserTable.groovy        (g:user-table, local to admin)
+```
+
+### Wiring
+
+```groovy
+class Router {
+    static Launchpad global = new Launchpad()                       // → "global"
+    static Launchpad auth   = new Launchpad('/slices/auth')         // → "auth"
+    static Launchpad admin  = new Launchpad('/slices/admin')        // → "admin"
+
+    @Alert('on / hit')
+    static _home(HttpResult r) {
+        global.assemble(['home.ghtml']).launch(r, '_wrapper.ghtml')
+    }
+
+    @Alert('on /login hit')
+    static _login(HttpResult r) {
+        // The auth slice's templates and elements take precedence;
+        // the global Launchpad's <g:button> and <g:card> are still reachable
+        // via the shared pool.
+        auth.assemble(['login.ghtml']).launch(r, '_wrapper.ghtml')
+    }
+
+    @Alert('on /admin hit')
+    static _admin(HttpResult r) {
+        admin.assemble(['dashboard.ghtml']).launch(r, '_wrapper.ghtml')
+    }
+}
+```
+
+### Resolution in practice
+
+Inside `slices/auth/parts/login.ghtml`:
+
+```html
+<g:card>                                    <!-- from shared pool: global -->
+    <g:login-form></g:login-form>           <!-- from auth's local map -->
+    <g:button>Sign In</g:button>            <!-- from shared pool: global -->
+</g:card>
+```
+
+If `auth` later defined its own `<g:button>` element with a slice-specific style, that local definition would shadow global's version **for auth's templates only** — admin's pages would still see global's button.
+
+### Qualified syntax when slices collide
+
+If `auth` and `admin` both define `<g:notice-bar>` and neither is global, the pool drops the name (so neither slice's notice-bar is reachable through the pool from a third slice). To explicitly reach a specific slice's version, use the qualified form:
+
+```html
+<g:auth/notice-bar message="Session expiring soon"></g:auth/notice-bar>
+```
+
+This works from any rendering Launchpad, including from inside another slice's `prerender()` return string.
+
+---
+
 ## Passing Data from Route Handlers
 
 Set data in the route handler, access it in the template via the `data` variable:

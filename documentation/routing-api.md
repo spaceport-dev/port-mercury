@@ -17,7 +17,7 @@ Every HTTP alert handler receives an `HttpResult` whose `context` property is an
 | `time` | `Long` | Timestamp when the request was received (`System.currentTimeMillis()`) |
 | `cookies` | `Map<String, String>` | Request cookies, keyed by cookie name |
 | `headers` | `Map<String, String>` | Request headers, keyed by header name |
-| `data` | `Map` | Parsed request data from all sources (see [Request Data Parsing](#request-data-parsing)) |
+| `data` | `Map` | Parsed request data from all sources (see [Request Data Parsing](#request-data-parsing)). Repeated query/form parameters (e.g. `?tag=a&tag=b`) are collected into a `List<String>` for that key. Use `context.list(name)` when you want a list regardless of whether the original value arrived as a single string or as a list. |
 | `dock` | `Cargo` | Session-scoped reactive data container tied to the client |
 | `client` | `Client` | The client/session object for this request |
 | `resultType` | `Class` | Set to `HttpResult` — used internally to instantiate the correct Result subclass |
@@ -60,10 +60,20 @@ Spaceport automatically parses the request body based on the `Content-Type` head
 | `application/json` | JSON body parsed into a Map via `JsonSlurper`. Nested structures preserved. |
 | `multipart/form-data` | Each part extracted. File parts stored as the raw `Part` object. Non-file parts stored as strings. Maximum request size: **50 MB**. |
 | `application/x-www-form-urlencoded` | Standard form key-value pairs parsed into the data map. |
-| *(query string)* | Query parameters parsed from the URL and merged into the data map. Always parsed, regardless of Content-Type. |
+| *(query string)* | Query parameters parsed from the URL and merged into the data map. Always parsed, regardless of Content-Type. A missing `Content-Type` header is handled safely. |
 | *(other / none)* | No body parsing. Only query string parameters are available. |
 
 **Precedence:** If the same key appears in both the query string and the body, the body value takes precedence.
+
+### Repeated parameters
+
+A parameter that appears more than once in the query string or form body (`?tag=red&tag=blue`) lands in `r.context.data` as a `List<String>`. To avoid having to branch on "is this a String or a List?", use `r.context.list(name)`:
+
+```groovy
+List tags = r.context.list('tag')   // always a List<String>, even when one or zero values were sent
+```
+
+`context.list(name)` returns an empty list when the key is absent or null, the existing list when the value is already a List, or a single-element list wrapping the value otherwise.
 
 ### File Uploads
 

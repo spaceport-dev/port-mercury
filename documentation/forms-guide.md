@@ -94,7 +94,7 @@ static _createOrder(HttpResult r) {
 }
 ```
 
-**GET and DELETE requests** have their query parameters placed into `r.context.data`. When a parameter appears multiple times, the last value wins.
+**GET and DELETE requests** have their query parameters placed into `r.context.data`. When a parameter appears multiple times, repeated keys return `List<String>`.
 
 ### Server Action Forms
 

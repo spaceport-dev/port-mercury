@@ -250,31 +250,79 @@ These annotations are straightforward -- during `initialize()`, all fields with 
 
 ### Startup Scan
 
-When a `Launchpad` instance is constructed, it scans the `launchpad/elements/` directory for `.groovy` files and registers each one in the static `Launchpad.elements` map (a `ConcurrentHashMap`):
+When a `Launchpad` instance is constructed, it scans its own `elements/` subdirectory for `.groovy` files. Each Launchpad gets:
+
+- A **per-instance** element map (`launchpad.elements`) keyed by kebab-case tag name
+- A contribution to the **static cross-Launchpad pool** (`Launchpad.sharedPool`) governed by ownership rules (see the [multi-Launchpad model](#multi-launchpad-element-resolution) below)
+
+All `.groovy` files for one Launchpad are parsed through a **single shared `GroovyClassLoader`**, so sibling Element classes are mutually visible by class name:
 
 ```groovy
-// In Launchpad constructor
-static def elements = new ConcurrentHashMap()
+// In Launchpad constructor (paraphrased)
+Map elements = new ConcurrentHashMap()      // per-instance, not static
+static def sharedPool = new ConcurrentHashMap()  // cross-Launchpad pool
+static def poolOwners = new ConcurrentHashMap()
 
-if (elements.isEmpty()) {
-    for (def element in new File(sourcePath + 'elements').listFiles()) {
-        if (element.name.endsWith('.groovy')) {
-            def text = element.text
-            // Transform reactive syntax: ${{ expr }} -> ${ _{ _script, _registration -> expr }}
-            text = text.replaceAll(/\$\{\{\s*/, '\\${ _{ _script, _registration -> ')
-            def clazz = new GroovyClassLoader(SourceStore.classLoader).parseClass(text)
-            elements.put(element.name.replace('.groovy', '').kebab(), clazz)
-        }
+def elementLoader = new GroovyClassLoader(SourceStore.classLoader)
+for (def element in new File(this.sourcePath + 'elements').listFiles()) {
+    if (element.name.endsWith('.groovy')) {
+        def text = element.text
+        // Transform reactive syntax: ${{ expr }} -> ${ _{ _script, _registration -> expr }}
+        text = text.replaceAll(/\$\{\{\s*/, '\\${ _{ _script, _registration -> ')
+        def clazz = elementLoader.parseClass(text)
+        def tagName = element.name.replace('.groovy', '').kebab()
+        this.elements.put(tagName, clazz)            // always populate local map
+        contributeToSharedPool(tagName, clazz)       // ownership-aware
     }
 }
+// Templates compiled against an older view of the registry must be re-scanned.
+SpaceportTemplateEngine.templateCache.clear()
 ```
 
 Key details:
 
-- **Reactive syntax preprocessing.** Before parsing, the `${{ }}` reactive expression syntax is transformed into Launchpad's internal closure format. This is the same transformation applied to `.ghtml` templates, which means reactive expressions work identically in elements and templates.
-- **Class loading.** Elements are compiled using a `GroovyClassLoader` that inherits from the application's `SourceStore.classLoader`. This gives elements access to all source module classes, framework imports, and application-defined types.
-- **Kebab-case keying.** The filename (minus `.groovy`) is converted to kebab-case using the `.kebab()` class enhancement. `StarRating.groovy` becomes the key `"star-rating"`.
-- **Lazy initialization.** The `elements.isEmpty()` check means elements are only scanned once across all Launchpad instances. On hot reload, the map is cleared and repopulated on the next request.
+- **Reactive syntax preprocessing.** The `${{ }}` reactive expression syntax is transformed into Launchpad's internal closure format before parsing. The same transformation is applied to `.ghtml` templates, so reactive expressions work identically in Elements and templates.
+- **Shared classloader per Launchpad.** All Element classes for a single Launchpad load into one classloader. `Page.prerender()` may reference `Sidebar.renderHtml(...)` directly — no helper module required. Earlier versions used a throwaway loader per file, which made sibling classes invisible to each other.
+- **Per-instance map.** `launchpad.elements` is now an instance field, not the static `Launchpad.elements` of earlier versions. Two Launchpads constructed for the **same source path** share the same element map (the `assemble()` case), so the install pass runs once per source path.
+- **Path normalization.** The directory lookup uses the trailing-slash-normalized `this.sourcePath`. Earlier code used the constructor's raw `sourcePath` argument, which silently missed the directory when callers passed a path without a trailing slash.
+- **Template cache invalidation.** Installing a new Element clears `SpaceportTemplateEngine.templateCache`. Without this, templates compiled before the new Element was registered would still report `<!-- SpaceportTemplateEngine: Unknown tag: ... -->` until something else forced a recompile.
+
+### Multi-Launchpad Element Resolution
+
+A Spaceport can have multiple Launchpads running side-by-side — typically a canonical "global" Launchpad plus one or more **slice** Launchpads with `sourcePath` set to a sub-directory. Each slice has its own `parts/` and `elements/`, and Element resolution honors both local definitions and a shared pool.
+
+**Naming and identity:**
+
+| Form | Resolved name |
+|---|---|
+| `new Launchpad()` (no args) | `"global"` (reserved) |
+| `new Launchpad('/path/to/alpha')` | `"alpha"` (last path segment) |
+| `new Launchpad(name: 'main')` | `"main"` |
+| `new Launchpad('/path/to/z', name: 'zeta')` | `"zeta"` |
+
+A slice cannot claim the reserved name `"global"`; the constructor throws if you try. Reusing an existing name with a *different* source path also throws. Same name + same source path is allowed (this is the `assemble()` case — both instances refer to the same logical Launchpad and share the elements map).
+
+**Resolution order from any rendering Launchpad:**
+
+1. `this.elements[name]` — the rendering Launchpad's own local map. If found, use it.
+2. `Launchpad.sharedPool[name]` — the cross-Launchpad pool. If found, use it.
+3. Otherwise: `<!-- Unknown tag: name -->`.
+
+A local definition always shadows the pool **for the Launchpad that defines it locally**, but the pool still serves any Launchpad that doesn't have a local definition.
+
+**Pool ownership rules (in `contributeToSharedPool`):**
+
+| State | Action |
+|---|---|
+| Pool slot empty | This Launchpad claims it |
+| Slot owned by `global`, this Launchpad is not global | No-op (global cannot be displaced) |
+| Slot owned by another slice, this Launchpad is global | Overwrite — global wins |
+| Slot owned by slice A, this is slice B (neither is global) | **Evict** — remove the name from the pool entirely. Both slices keep it locally; nobody else sees it through the pool. |
+| Slot owned by this Launchpad re-installing | No-op |
+
+The eviction case is intentional: the framework surfaces ambiguous slice-vs-slice collisions loudly rather than picking a silent winner.
+
+**Qualified `<g:slice/element>` syntax** bypasses both local and pool resolution and reaches directly into the named slice's local map. See the [Launchpad API reference](launchpad-api.md) for the user-facing description; in the engine, it's recognized at compile time (a `launchpadName` field is stashed on `template.elements` entries) and at runtime in `processNestedElements`.
 
 ---
 
@@ -301,17 +349,21 @@ The `hud:` prefix is aliased to `g:` for backward compatibility.
 
 In `processTag()`, the engine checks two registries:
 1. **Built-in generators** (`generators` map) -- handles tags like `<g:javascript>` and `<g:prime>`
-2. **Registered elements** (`Launchpad.elements` map) -- handles user-defined elements
+2. **Registered elements** — resolved via the engine's bound `Launchpad` (`launchpad.resolveElement(name)` for local + shared-pool lookup), or via the qualified slice's local map when the tag uses `<g:slice/element>` syntax
 
 For user-defined elements, the tag is replaced with placeholder markers:
 
 ```groovy
-if (Launchpad.elements.containsKey(name)) {
+if (knownElement) {
     def id = 10.randomID()
-    template.elements.put(id, [name: name])
+    def entry = [name: localName]
+    if (qualifiedSlice != null) entry.launchpadName = qualifiedSlice  // for render-time resolution
+    template.elements.put(id, entry)
     result = """<!-- ${id}-styles --><${id} ${originalAttributeString}><!-- ${id}-body -->${body}<!-- END ${id}-body --></${id}><!-- ${id}-handler -->"""
 }
 ```
+
+The engine receives a Launchpad via its constructor (`new SpaceportTemplateEngine(launchpad)`), so each slice's templates see its own local Elements plus the shared pool. The no-arg constructor still works for callers without a Launchpad context — those fall back to the shared pool only, matching the legacy single-Launchpad behavior.
 
 This produces intermediate HTML with:
 - `<!-- id-styles -->` -- placeholder for CSS injection
@@ -331,8 +383,12 @@ def matcher = pattern.matcher(primed)
 while (matcher.find()) {
     def elementId = matcher.group(1)
     def e = template.elements.get(elementId)
+    if (e == null) continue
 
-    Element newElement = Launchpad.elements[e.name].newInstance()
+    // Resolve from this Launchpad's perspective; honors qualified <g:slice/elem>.
+    Class elementClass = resolveForEntry(e)
+    if (elementClass == null) continue
+    Element newElement = elementClass.newInstance()
     newElements.add([name: e.name, replacementId: elementId, element: newElement])
 
     // Context injection
@@ -340,6 +396,15 @@ while (matcher.find()) {
     newElement.client = binding.client ?: binding.'$client'
     newElement.dock   = binding.dock ?: binding.'$dock'
     newElement._id = 6.randomID()
+}
+
+// Stash the recipe for EVERY compile-time element id (not just the ones
+// that didn't appear in the primed output). parseElements consults these
+// recipes to spin up extra instances when a reactive update produces more
+// placeholder copies than the original render registered.
+if (binding._stashed_elements == null) binding._stashed_elements = [:]
+for (def element in template.elements) {
+    binding._stashed_elements.put(element.key, element.value)
 }
 ```
 
@@ -351,7 +416,14 @@ Elements that appear inside reactive expressions or conditional blocks may not h
 
 ### Phase 3: Element Processing (Launchpad.parseElements)
 
-After all parts are primed and assembled with the vessel template, `parseElements()` is called. It performs the final transformation in a `while (replacing)` loop that continues until no more elements need processing (handling nested elements that are revealed by processing outer elements).
+After all parts are primed and assembled with the vessel template, `parseElements()` is called. It performs the final transformation in a `while (replacing)` loop, capped at 16 passes, that continues until no more elements need processing (handling nested elements that are revealed by processing outer elements).
+
+Before the main loop runs, `parseElements` calls `reconcileMarkerCount(html)`, which spins up any element instances needed to cover handler markers currently in the HTML. The reconciliation pass uses the recipes stored in `binding._stashed_elements` (every compile-time element id stashes one) and is the single point that handles both:
+
+- **Stashed-on-first-appearance** — a compile-time-known element that wasn't in the initial primed output (e.g. inside a conditional or an empty reactive list) is being rendered now.
+- **Reactive-update shortfall** — a reactive expression that previously emitted *N* copies of the same `<g:foo>` placeholder now emits *N+M* copies; the surplus needs fresh instances or its handler markers will stay in the payload as raw `<!-- {id}-handler -->` rather than becoming real `<custom-element>` tags with handler JS.
+
+The 16-pass cap defends against an Element whose `prerender()` accidentally emits its own tag (a true cycle would otherwise loop forever). When the cap is hit, the loop terminates safely — the offending Element doesn't render, but the server doesn't hang.
 
 For each element instance, the method performs these steps in order:
 
@@ -394,13 +466,27 @@ attributes.tap {
 }
 ```
 
-**Step 3: Call `prerender()`.**
+**Step 3: Call `prerender()` and rewrite any nested `<g:>` tags it emitted.**
 
 ```groovy
-html = StringUtils.replaceOnce(html, fullMatch, element.prerender(body, attributes))
+def prerendered = element.prerender(body, attributes)
+prerendered = processNestedElements(prerendered)   // scan return value for <g:> tags
+html = StringUtils.replaceOnce(html, fullMatch, prerendered)
 ```
 
-The body marker region is replaced with whatever `prerender()` returns.
+The body marker region is replaced with whatever `prerender()` returns. Before substitution, `processNestedElements()` scans the returned HTML for `<g:>` patterns; for each tag it finds, a fresh Element instance is created, registered into `binding._elements`, and inlined as the same placeholder markup the template engine would have produced at compile time. The outer 16-pass loop then picks up these new instances on subsequent passes, giving them the same treatment (CSS dedup, handler emission, recursive nesting, qualified-syntax resolution) as template-authored tags.
+
+This means an Element can compose other Elements declaratively rather than concatenating their rendered HTML by hand:
+
+```groovy
+class Page implements Element {
+    String prerender(String body, Map attributes) {
+        return "<div><g:sidebar></g:sidebar><main>${body}</main></div>"
+    }
+}
+```
+
+`processNestedElements()` also accepts the qualified `<g:slice/element>` form, reaching directly into a named Launchpad's local elements map (bypassing the rendering Launchpad's local + pool resolution).
 
 **Step 4: Call `initialize()`.**
 
@@ -415,13 +501,18 @@ This processes all annotations and builds the aggregated CSS and JavaScript (as 
 **Step 5: Inject CSS and JavaScript.**
 
 ```groovy
+def globalStyle = ''
+if (element._style?.length() > 0 && !globalStyled.contains(element.tagName)) {
+    globalStyle = element._style
+    globalStyled.add(element.tagName)
+}
 html = StringUtils.replaceOnce(html, "<!-- " + id + "-styles -->",
-    "${element._style}${element._scopedStyle}")
+    "${globalStyle}${element._scopedStyle}")
 html = StringUtils.replaceOnce(html, "<!-- " + id + "-handler -->",
     element._handler)
 ```
 
-The style marker is replaced with `<style>` tags containing the element's CSS. The handler marker is replaced with the `<script>` tag containing the element's JavaScript.
+The style marker is replaced with `<style>` tags. Global `@CSS` content (`_style`) is emitted **once per element type per response** — subsequent instances of the same type skip it via the `globalStyled` tracker. Per-instance `@ScopedCSS` content (`_scopedStyle`) is still emitted for every instance. The handler marker is replaced with the `<script>` tag containing the element's JavaScript.
 
 **Step 6: Inject prepend/append content.**
 
@@ -582,10 +673,10 @@ if (data.action === 'elementResponse') {
 
 ### Server-Side Lifecycle
 
-1. **Discovery** -- Element `.groovy` files are scanned from `launchpad/elements/` during the first Launchpad construction
+1. **Discovery** -- Element `.groovy` files are scanned from each Launchpad's `elements/` subdirectory during that Launchpad's construction
 2. **Source preprocessing** -- Reactive `${{ }}` syntax is transformed to internal closure format
-3. **Class compilation** -- `GroovyClassLoader` compiles the preprocessed source into a Class object
-4. **Registration** -- The Class is stored in `Launchpad.elements` (static `ConcurrentHashMap`)
+3. **Class compilation** -- A single shared `GroovyClassLoader` (per Launchpad) compiles all that Launchpad's preprocessed Element sources into Class objects, so sibling Elements can reference each other by class name
+4. **Registration** -- The Class is stored in the Launchpad's per-instance `launchpad.elements` map and contributed to the static `Launchpad.sharedPool` according to ownership rules
 5. **Instantiation** -- On each page request, `newInstance()` creates a fresh element instance
 6. **Context injection** -- `launchpad`, `client`, `dock`, and `_id` are set on the instance
 7. **`prerender()` call** -- The element's body and parsed attributes are passed in; the method returns inner HTML
@@ -635,65 +726,103 @@ new Beacon(dir, { path, kind ->
         Thread.start {
             Thread.sleep(100)  // 100ms debounce
             SpaceportTemplateEngine.templateCache.clear()
-            elements.clear()
+            clearAllElements()   // per-instance maps + shared pool + pool owners
             reloading = false
         }
     }
 })
 ```
 
-The debounce prevents cascading reloads when an IDE saves multiple files at once. After clearing:
+`clearAllElements()` iterates `Launchpad.byName.values()` and clears each Launchpad's `elements` map, then clears `sharedPool` and `poolOwners`. The debounce prevents cascading reloads when an IDE saves multiple files at once. After clearing:
 
-- `elements` map is empty, so the next request triggers full element rediscovery and recompilation
+- Every Launchpad's `elements` map is empty, so the next request triggers full element rediscovery and recompilation for whichever Launchpad serves the request
 - Template cache is cleared, so `.ghtml` files are re-parsed
 - Existing connected client sessions are not affected until the user refreshes the page
+
+In addition, the template cache is cleared **each time a Launchpad finishes installing its Elements**, regardless of debug mode. This guarantees that adding a new Element file doesn't leave templates compiled against an older view of the registry (which would otherwise produce `<!-- SpaceportTemplateEngine: Unknown tag: ... -->` until something else forced a recompile).
 
 Hot-reload does **not** push changes to already-connected clients. A page refresh is required to see updated elements.
 
 ---
 
-## Stashed Elements and Deferred Processing
+## Stashed Elements, Reactive Updates, and Marker Reconciliation
 
-Elements that appear inside reactive expressions (`${{ }}`) or within conditional blocks present a timing challenge: the reactive closure may not be evaluated during the initial template prime, so the element markers are not present in the initial output. Launchpad handles this with "stashed elements":
+Elements that appear inside reactive expressions (`${{ }}`) or within conditional blocks present two related timing challenges:
+
+1. **Deferred appearance** — a compile-time-known element wasn't in the initial primed output (e.g. inside an `<% if %>` block that evaluated false, or inside a reactive expression over an initially-empty list). Its handler markers show up later, when the page is reactively re-rendered.
+2. **Reactive-update shortfall** — a reactive expression that emitted *N* copies of a `<g:foo>` placeholder on first render now emits *N+M* copies after a state change (e.g. `items` grew from 6 to 9). The framework's per-placeholder element instances cover only the first *N*; the surplus *M* placeholders carry handler markers that no instance has been spun up for.
+
+Both cases route through `binding._stashed_elements` and the `reconcileMarkerCount` pass at the start of `parseElements`.
+
+### Stash every compile-time recipe
+
+`prime()` stashes **every** `template.elements` entry into `binding._stashed_elements` — not just entries that didn't appear in the initial primed output:
 
 ```groovy
-// During prime: if element markers are found in the template metadata
-// but not yet in the primed output, stash them for later
 if (binding._stashed_elements == null) binding._stashed_elements = [:]
 for (def element in template.elements) {
-    if (!binding._elements.find { it.replacementId == element.key }) {
-        binding._stashed_elements.put(element.key, element.value)
-    }
+    binding._stashed_elements.put(element.key, element.value)
 }
 ```
 
-During `parseElements()` (called after the full page is assembled), the method checks for stashed elements in the HTML output and instantiates them:
+This makes `_stashed_elements` an "all compile-time recipes" map. The reconcile pass needs a recipe to spin up a fresh instance for any placeholder id, so every id must be present here regardless of whether it appeared in the initial render.
+
+### Reconcile markers against existing instances
+
+At the start of `parseElements`, `reconcileMarkerCount(html)` counts handler markers per id in the incoming HTML and compares them to `binding._elements` entries that haven't already been resolved (no `<tagName element-id="rid">` in the payload yet). For each id, if there are more markers than available instances, it creates the shortfall using the stashed recipe:
 
 ```groovy
-if (binding._stashed_elements) {
-    def pattern = Pattern.compile(/<!-- (\w*)-handler -->/)
-    def matcher = pattern.matcher(html)
-    while (matcher.find()) {
-        def elementId = matcher.group(1)
-        def e = binding._stashed_elements.get(elementId)
-        if (e == null) continue
-        if (!Launchpad.elements.containsKey(e.name)) continue
+private void reconcileMarkerCount(String html) {
+    if (binding._stashed_elements == null || binding._stashed_elements.isEmpty()) return
+    if (binding._elements == null) binding._elements = []
 
-        Element newElement = Launchpad.elements[e.name].newInstance()
-        // ... context injection, same as Phase 2 ...
+    def markerCounts = [:]
+    def matcher = Pattern.compile(/<!-- (\w*)-handler -->/).matcher(html)
+    while (matcher.find()) {
+        String id = matcher.group(1)
+        markerCounts[id] = (markerCounts[id] ?: 0) + 1
+    }
+
+    markerCounts.each { String id, Integer markerCount ->
+        int availableCount = binding._elements.count { e ->
+            e.replacementId == id &&
+            !html.contains('<' + e.element.tagName + ' element-id="' + e.element._id + '"')
+        }
+        int shortfall = markerCount - availableCount
+        if (shortfall <= 0) return
+
+        def recipe = binding._stashed_elements[id]
+        Class cls = resolveForEntry(recipe)
+        if (cls == null) return
+
+        shortfall.times {
+            Element inst = cls.newInstance()
+            inst.launchpad = this
+            inst.client = binding.client ?: binding.'$client'
+            inst.dock   = binding.dock   ?: binding.'$dock'
+            inst._id    = 6.randomID()
+            binding._elements << [name: recipe.name, replacementId: id, element: inst]
+        }
     }
 }
 ```
 
-The `parseElements()` loop also handles nested element processing: if processing one element's `prerender()` output reveals another element tag, the outer loop continues until no more replacements occur.
+Reconciliation **preserves existing entries** and only adds what's missing. Earlier versions of the code renamed `replacementId`s on existing entries when stashed elements were processed; that logic is gone — the new reconcile pass is correct for both the deferred-appearance case and the reactive-update-grew case.
+
+### Why this matters in practice
+
+Reactive lists are a common pattern. Before this reconciliation, anything like `items.combine { "<g:row>..." }` where `items` grew over time silently dropped Elements past the initial count — they appeared in the DOM as bare custom tags but without their handler hookup, so any `@Bind`-driven JS behavior didn't work for the elements born via reactive update.
+
+The reconcile pass also handles the case where a reactive expression initially evaluated to an empty list. Earlier logic stashed entries only on first appearance and would miss subsequent updates; the unconditional stash + reconcile combination covers it correctly.
 
 ---
 
 ## Thread Safety Considerations
 
-- **`Launchpad.elements`** is a `ConcurrentHashMap`, safe for concurrent reads during request handling and writes during hot-reload
-- **Element instances** are created per-request via `newInstance()`, so element state is request-scoped with no shared mutable state between requests
-- **`launch()` is `synchronized`**, preventing concurrent rendering of the same Launchpad instance. Different Launchpad instances (different routes) render concurrently
-- **`_bindings`, `_reactions`, and `_elements`** on the Launchpad binding are per-session, tied to a specific launch ID
-- **Cargo objects** used within elements provide their own thread-safety guarantees
-- **Hot-reload** clears `elements` and template cache on a separate thread with a debounce delay; the `reloading` flag prevents overlapping reloads
+- **`launchpad.elements`** (per-instance) and **`Launchpad.sharedPool` / `Launchpad.poolOwners` / `Launchpad.byName`** (static) are all `ConcurrentHashMap`s, safe for concurrent reads during request handling and writes during hot-reload.
+- **Element instances** are created per-request via `newInstance()`, so element state is request-scoped with no shared mutable state between requests.
+- **`launch()` is `synchronized`**, preventing concurrent rendering of the same Launchpad instance. Different Launchpad instances (different routes, different slices) render concurrently.
+- **`_bindings`, `_reactions`, and `_elements`** on the Launchpad binding are per-session, tied to a specific launch ID.
+- **`binding`** (the per-Launchpad script-binding map) is `Collections.synchronizedMap([:])` — chosen over `ConcurrentHashMap` because templates legitimately assign `null` values via the `def`-strip mechanism (e.g. `<% def foo = something?.maybeMissing %>` routes through `Binding.setVariable`, which `ConcurrentHashMap` would NPE on). The synchronized HashMap preserves coarse-grained thread-safety for concurrent websocket-event paths without the null-rejection.
+- **Cargo objects** used within elements provide their own thread-safety guarantees.
+- **Hot-reload** clears every Launchpad's `elements` map plus the shared pool and template cache on a separate thread with a debounce delay; the `reloading` flag prevents overlapping reloads.

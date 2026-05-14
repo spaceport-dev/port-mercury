@@ -105,7 +105,7 @@ Class names use CamelCase. In templates, use the kebab-case equivalent with a `g
 | `TextEditor` | `<g:text-editor>` |
 | `HudDialog` | `<g:hud-dialog>` |
 
-The conversion from CamelCase to kebab-case happens automatically via the `getTagName()` method on the Element trait.
+The conversion from CamelCase to kebab-case happens automatically via the `getTagName()` method on the Element trait. (There's also a `static getName()` that returns the lowercase concatenation — `StarRating` → `"starrating"` — which is **not** the form that matches `<g:>` tags. Use `getTagName()` when you need the template-side name.)
 
 ## File Location
 
@@ -145,6 +145,21 @@ Real-world example: A `UserAlerts` element that reads notification data from the
 Combine both approaches. Use client-side JavaScript for instant visual feedback (optimistic UI), then sync state to the server via `@Bind` methods. This is the recommended approach for most production components.
 
 Real-world example: A notes component that uses `contenteditable` for instant client-side editing, then persists the content to Cargo on blur via a server action.
+
+## Composing Elements From Other Elements
+
+Element classes within a single Launchpad's `elements/` directory share one classloader, so they can reference each other by class name (e.g. `Sidebar.renderHtml(...)` from inside `Page.prerender()`). And the string returned by `prerender()` is itself scanned for `<g:>` tags — so an Element can include other Elements declaratively rather than splicing rendered HTML together by hand:
+
+```groovy
+class Page implements Element {
+    String prerender(String body, Map attributes) {
+        // Both the static call and the nested <g:sidebar> tag are processed.
+        return "<div><g:sidebar></g:sidebar><main>${body}</main></div>"
+    }
+}
+```
+
+Nested tags get the full treatment — CSS deduplication, handler injection, recursive composition. See the [API reference](server-elements-api.md) for the qualified `<g:slice/element>` syntax used in multi-Launchpad setups.
 
 ## Available Annotations
 

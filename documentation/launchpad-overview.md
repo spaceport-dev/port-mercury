@@ -113,6 +113,24 @@ Every GHTML template has access to these variables without any imports:
 | `cookies` | `Map` | Request cookies |
 | `context` | `HttpContext` | HTTP context with `method`, `target`, `headers`, `request`, `response` |
 
+## Vertical Slicing: Multiple Launchpads
+
+Spaceport supports running multiple Launchpads in one application — typically a canonical "global" Launchpad alongside one or more **slice** Launchpads, each pointing at a different source directory:
+
+```groovy
+static Launchpad launchpad      = new Launchpad()                     // → "global"
+static Launchpad authSlice      = new Launchpad('/slices/auth')       // → "auth"
+static Launchpad adminSlice     = new Launchpad('/slices/admin', name: 'admin')
+```
+
+Each slice has its own `parts/` and `elements/` directories. Element resolution honors both per-Launchpad local definitions and a cross-Launchpad shared pool:
+
+- **Local first.** A slice's templates see that slice's local Elements before anything else.
+- **Pool fallback.** When a name isn't in the local map, resolution falls back to the shared pool. The global Launchpad's contributions to the pool always win; slice-vs-slice collisions evict the name from the pool entirely (each slice still has its own copy locally).
+- **Qualified syntax.** `<g:alpha/hud-user>` bypasses both layers and reaches directly into the named slice's local map.
+
+If you only ever instantiate one Launchpad, none of this matters — it behaves exactly like a single-Launchpad framework. The slicing model surfaces only when you opt into it. See the [API reference](launchpad-api.md#multi-launchpad-element-resolution) for the full ownership rules and worked examples.
+
 ## HUD-Core Requirement
 
 For reactive bindings and server actions to work, the client page must include the HUD-Core JavaScript library. This lightweight library (~23KB minified) handles WebSocket connections, event binding for `on-*` attributes, and DOM updates from server reactions.
