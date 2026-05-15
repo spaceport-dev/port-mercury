@@ -1,0 +1,3 @@
+# macOS resource-fork files (created on non-HFS+ volumes)
+._*
+.DS_Store
