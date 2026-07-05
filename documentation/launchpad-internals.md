@@ -232,9 +232,7 @@ When `prime()` calls `template.make(scriptBinding)`, the template creates a `Wri
 
 ## The Binding System
 
-All templates rendered in a single `launch()` call share a `Binding` object backed by a per-Launchpad map. The map is `Collections.synchronizedMap([:])` (not a `ConcurrentHashMap`) because the `def`-strip mechanism routes top-level template variables through `Binding.setVariable`, which can legitimately store `null` values — e.g. `<% def foo = something?.maybeMissing %>` when `something` is null. A `ConcurrentHashMap` would NPE on that write per its no-null contract. The synchronized HashMap preserves the coarse-grained thread-safety the binding needs for concurrent websocket-event paths without the null restriction.
-
-> **Migration note.** The binding's underlying map type changed from `ConcurrentHashMap` to `Collections.synchronizedMap`. All call sites interact through the `Map` interface, so no other code needs to change. The other ConcurrentHashMaps on Launchpad (`bindingSatellites`, `elements` instance, `sharedPool`, `poolOwners`, `byName`, the per-binding `_reactions` / `_bindings` sub-maps) keep their types — they're pointer registries keyed by UUID or name with object values, and don't need to accept nulls.
+All templates rendered in a single `launch()` call share a `Binding` object backed by a per-Launchpad map (`Collections.synchronizedMap([:])`). The other maps on Launchpad — `bindingSatellites`, `elements`, `sharedPool`, `poolOwners`, `byName`, and the per-binding `_reactions` / `_bindings` sub-maps — are `ConcurrentHashMap`s; they're pointer registries keyed by UUID or name with object values.
 
 When `launch()` begins, it populates the binding with request-scoped variables:
 
@@ -603,7 +601,7 @@ The injected client-side script handles three types of incoming messages:
 
 - **`launchpad.elements` (per-instance)** and **`Launchpad.sharedPool` / `Launchpad.poolOwners` / `Launchpad.byName` (static)** are all `ConcurrentHashMap`s, safe for concurrent Server Element registration and lookup.
 
-- **`binding`** (the per-Launchpad script-binding map) is `Collections.synchronizedMap([:])` rather than `ConcurrentHashMap` because templates legitimately store `null` values via the `def`-strip mechanism (a `ConcurrentHashMap` would NPE per its no-null contract). The synchronized HashMap preserves coarse-grained thread-safety for the websocket-event paths.
+- **`binding`** (the per-Launchpad script-binding map) is `Collections.synchronizedMap([:])`, providing coarse-grained thread-safety for the websocket-event paths that read and write it during reactive updates.
 
 - **Per-request isolation** -- Each request gets its own `Binding` object (created in the `Launchpad` constructor) with its own `_reactions` and `_bindings` maps (both `ConcurrentHashMap`). There is no shared mutable state between concurrent requests during the render phase.
 

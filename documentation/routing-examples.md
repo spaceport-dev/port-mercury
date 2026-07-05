@@ -181,7 +181,7 @@ static _dashboard(HttpResult r) {
 
 ### Priority-Based Middleware
 
-For broader protection, use a high-priority handler that covers a path prefix:
+For protecting a subtree of routes, use a high-priority handler that covers a path prefix:
 
 ```groovy
 @Alert(value = '~on /admin/(.*) hit', priority = 100)
@@ -210,7 +210,7 @@ static _adminSettings(HttpResult r) {
 MadAve-Collab uses a more advanced pattern where authorization rules are loaded from configuration files, mapping URL patterns to required roles:
 
 ```groovy
-@Alert(value = '~on /(.*) hit', priority = 50)
+@Alert(value = '~on /(.*) hit', priority = 50, passive = true)
 static _roleCheck(HttpResult r) {
     def path = r.matches[0]
     def requiredPermission = RoleMap.getRequiredPermission(path)
@@ -222,6 +222,8 @@ static _roleCheck(HttpResult r) {
 ```
 
 This pattern scales well for applications with many protected routes — add a route to the role map configuration instead of adding authorization code to each handler.
+
+The `passive = true` attribute is essential here. The wildcard `~on /(.*) hit` matches **every** path — including ones no route serves — and a normal (non-passive) hook marks each matched request as handled, which would make unrouted paths return 200 instead of 404. A passive hook runs exactly the same way (it can still redirect and cancel, as above) but never claims the request, so the 404 fallback keeps working. Before `passive` existed, the only workaround was scoping the pattern to a prefix like `~on /app/(.*) hit`; that's still sensible when the middleware genuinely only concerns one subtree, but it's no longer required for global middleware.
 
 ---
 
@@ -239,7 +241,7 @@ static _errorPage(HttpResult r) {
 }
 ```
 
-The `r.called` property is `false` when no handler matched the request. Since `on page hit` fires after all route handlers (and after error handling), you can also use it to catch 500 errors:
+The `r.called` property is `false` when no handler claimed the request (hooks marked `passive = true` run without claiming it). Since `on page hit` fires after all route handlers (and after error handling), you can also use it to catch 500 errors:
 
 ```groovy
 @Alert('on page hit')
@@ -364,7 +366,7 @@ static _debugRoutes(HttpResult r) {
 }
 ```
 
-These routes are accessible during development but effectively disabled in production — the `cancelled = true` stops processing and the default 404 behavior takes over.
+These routes are accessible during development and disabled in production — the `cancelled = true` stops any later handlers from running. Note that because the handler still matched, the request counts as handled (`r.called` is `true`), so production requests to these paths return an empty 200 rather than a 404. If you want a real 404 in production, set it explicitly: `r.context.response.setStatus(404)` before returning.
 
 ---
 

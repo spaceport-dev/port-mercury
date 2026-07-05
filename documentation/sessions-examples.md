@@ -34,7 +34,7 @@ class Auth {
     // Logout route
     @Alert('on /logout hit')
     static _logout(HttpResult r) {
-        r.client.removeCookie(r.context.cookies.'spaceport-uuid' as String)
+        r.client.deauthenticate(r.context.cookies.'spaceport-uuid' as String)
         r.setRedirectUrl('/')
     }
 }
@@ -43,7 +43,48 @@ class Auth {
 Key points:
 - `getAuthenticatedClient()` handles the CouchDB lookup and BCrypt verification
 - You must call `attachCookie()` to link the session cookie to the authenticated Client
-- `removeCookie()` is the only step needed for logout — the Client object remains in memory but is no longer associated with the browser's cookie
+- `deauthenticate()` performs the full logout teardown — it detaches the cookie, and if that was the client's last session, clears the authenticated flag, closes any WebSockets, and removes the Client from the registry. (The lower-level `removeCookie()` only detaches the cookie, leaving an authenticated Client lingering in memory.)
+
+---
+
+## Restoring a Session Without a Password
+
+When a session has been validated out-of-band — for example, against a durable session store that survives server restarts — there is no password to present. `client.authenticate(userId)` marks the already-bound Client as authenticated in place:
+
+```groovy
+import spaceport.computer.alerts.Alert
+import spaceport.computer.alerts.results.HttpResult
+
+class SessionRestore {
+
+    // Passive middleware: validates a persisted session on every request
+    @Alert(value = '~on /(.*) hit', priority = 1000, passive = true)
+    static _restoreSession(HttpResult r) {
+        def client = r.context.client
+        def uuid = r.context.cookies.'spaceport-uuid' as String
+        if (uuid == null) return
+
+        def record = SessionStore.lookup(uuid)   // your persisted session store
+        def valid = record && !record.revoked && !record.expired
+
+        if (valid) {
+            if (!client.isAuthenticated()) {
+                client.authenticate(record.userId)
+                r.context.dock = client.getDock(uuid)
+            }
+            SessionStore.touch(uuid)
+        } else if (client.isAuthenticated()) {
+            client.deauthenticate(uuid)
+        }
+    }
+}
+```
+
+Key points:
+- `authenticate(userId)` mutates the Client the framework already bound to the request's cookie, so the cookie↔Client binding stays intact — it does **not** mint a second Client the way `getClient(userId)` would
+- It performs no credential check: only call it after the session has genuinely been validated (a live, non-revoked session record; a verified SSO assertion; etc.)
+- The de-auth branch reuses `deauthenticate(uuid)`, which handles the flag, sockets, and registry in one call
+- The hook is `passive = true` so this global wildcard middleware doesn't mark every request as handled — unrouted paths still return 404 (see the [Alerts documentation](alerts-api.md))
 
 ---
 
@@ -261,6 +302,8 @@ static _login(HttpResult r) {
 }
 ```
 
+**Caveat:** rewriting the session cookie this way drops the `SameSite=Lax` protection Spaceport normally applies to `spaceport-uuid`. If you use this pattern, emit a raw `Set-Cookie` header instead — see [Sessions Internals](sessions-internals.md) for the reason and the exact attribute format to match.
+
 The login form:
 
 ```html
@@ -414,11 +457,9 @@ static _adminResetPassword(HttpResult r) {
     def userDoc = ClientDocument.getClientDocument(userId)
     userDoc.changePassword(newPassword)
 
-    // Force logout — clear all authentication cookies
-    def userClient = Client.getClient(userId)
-    if (userClient) {
-        userClient.authenticationCookies.clear()
-    }
+    // Force logout of every session: detaches all cookies, clears the
+    // authenticated flag, closes WebSockets, and unregisters the Client
+    Client.getClient(userId)?.deauthenticateAll()
 
     // Flag for password change
     userDoc.fields.require_password_change = true

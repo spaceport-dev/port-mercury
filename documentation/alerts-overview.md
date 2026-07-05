@@ -107,9 +107,25 @@ static _adminPage(HttpResult r) {
 | -1 to -99 | Post-processing |
 | -100 or below | Fallback / catch-all handlers |
 
+## Passive Hooks (Middleware)
+
+Spaceport decides whether a request was "handled" by checking if any matching hook ran — if none did, the response is a 404. That creates a problem for truly global middleware: a hook registered on a wildcard like `~on /(.*) hit` matches *every* path, including ones no route serves, and would normally make missing pages return 200 instead of 404.
+
+Marking the hook `passive = true` solves this. A passive hook runs exactly like any other — same matching, same priority ordering — but it never marks the request as handled:
+
+```groovy
+// Runs on every request; unrouted paths still 404.
+@Alert(value = '~on /(.*) hit', priority = 1000, passive = true)
+static _logRequest(HttpResult r) {
+    println "Request: /${r.matches[0]}"
+}
+```
+
+Use `passive = true` for hooks that **observe or augment** requests — session restore, request logging, metrics, header injection — and are registered broadly enough to match routes they don't own. Hooks that actually produce a response should stay non-passive (the default), so the 404 fallback remains accurate.
+
 ## Cancellation
 
-Setting `r.cancelled = true` stops the handler chain. No further handlers for that event will execute. This is the primary mechanism for authentication guards and middleware short-circuiting.
+Setting `r.cancelled = true` stops the handler chain. No further handlers for that event will execute. This is the primary mechanism for authentication guards and middleware short-circuiting. (Cancellation works from passive hooks too — `passive` only affects whether the request counts as handled.)
 
 ## Common Patterns
 

@@ -17,7 +17,7 @@ The Alerts system has four core components:
                 │ registers
 ┌───────────────┴──────────────────────────────────┐
 │              AlertType (Abstract Base)            │
-│  - hookString, priority, compiledPattern         │
+│  - hookString, priority, passive, compiledPattern│
 │  - buzz(result) [abstract]                       │
 │  - dispose() [abstract]                          │
 └───────────────┬──────────────────────────────────┘
@@ -38,11 +38,11 @@ When source modules are loaded, `AnnotatedAlert.loadStaticHooks()` is called. Th
 
 1. Calls `ClassScanner.getLoadedClasses()` to get **all** classes loaded by Spaceport — both framework classes and user application classes.
 2. Iterates every class, checking each method for the `@Alert` annotation.
-3. For each annotated method, creates an `AnnotatedAlert` instance with the event string, priority, class name, and method name.
+3. For each annotated method, creates an `AnnotatedAlert` instance with the event string, priority, class name, method name, and the annotation's `passive` flag.
 
 ### Self-Registration
 
-The `AlertType` constructor calls `Alerts.notifyOf(this)`, which is `synchronized`. This method:
+The `AlertType` constructor — `AlertType(hookString, priority = 0, passive = false)` — calls `Alerts.notifyOf(this)`, which is `synchronized`. The `passive` flag is stored as a `final boolean` field; custom subclasses that call `super(hookString, priority)` keep the default `passive = false` and behave exactly as before. `notifyOf`:
 
 1. Adds the new handler as a `WeakReference` to the `registered` list.
 2. Removes any `null` weak references (handlers that were garbage collected).
@@ -71,7 +71,7 @@ These are called during hot-reload to tear down and rebuild the handler registry
    - Otherwise, uses `hookString.equalsIgnoreCase()` for case-insensitive string comparison.
 5. **Execution:** Calls `handler.buzz(result)`. For `AnnotatedAlert`, this invokes the static method via reflection: `m.invoke(null, result)`.
 6. **Error handling:** Each handler invocation is wrapped in try-catch. Exceptions are printed to stderr but do **not** propagate or cancel the chain.
-7. **Called flag:** `result.called` is set to `true` when at least one handler matches and executes.
+7. **Called flag:** `result.called` is set to `true` when a matching handler executes — unless the handler is `passive`. A passive hook (`hook.passive == true`) runs `buzz()` exactly as a normal hook — same matching, capture groups, priority position, and error handling — but skips the `called` bookkeeping (`if (!hook.passive) result.called = true`). This is what lets broad wildcard middleware run on every request without marking unrouted paths as handled.
 8. **Return:** Returns the mutated Result.
 
 ### `Alerts.invokeAll(hookStrings, context)`
@@ -80,13 +80,15 @@ Works like `invoke` but for each handler, checks it against **every** hookString
 
 The key difference from calling `invoke` twice: the **global priority order is preserved** across both event names. A priority-100 handler for `"on /path hit"` will run before a priority-0 handler for `"on /path GET"`.
 
+The `passive` flag is honored at both dispatch sites — `invoke` and `invokeAll` guard the `called` assignment identically. A single hook can match more than one of the event strings passed to `invokeAll`; a passive hook stays passive across all of them, never setting `called` regardless of how many strings it matches.
+
 ### HTTP Request Flow
 
 The `HttpRequestHandler` (Jetty handler) processes each request as:
 
 1. Builds an `HttpContext` with request, response, parsed data, cookies, headers, method, target, dock, client, and `resultType = HttpResult.class`.
 2. Calls `Alerts.invokeAll(['on <target> hit', 'on <target> <METHOD>'], context)`.
-3. If `result.called` is false (no handler matched), sets response status to 404.
+3. If `result.called` is false (no non-passive handler matched), sets response status to 404. Passive hooks deliberately leave `called` untouched, so a global wildcard middleware (`~on /(.*) hit` with `passive = true`) can run on an unrouted path without suppressing this fallback.
 4. Calls `Alerts.invoke('on page hit', context)` — the catch-all that fires on **every** request, even after errors.
 
 ### WebSocket Message Flow

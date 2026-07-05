@@ -110,6 +110,17 @@ static _adminPage(HttpResult r) {
 
 Because the authentication handler runs at priority 100 (higher = first), it intercepts unauthenticated requests before the page handler ever executes. Setting `r.cancelled = true` halts the chain — no further handlers for this event will fire. (Note: `on page hit` still fires, because it runs in a separate pass.)
 
+For middleware that should run on **every** route — request logging, metrics, session restore — register it on the global wildcard `~on /(.*) hit` and add `passive = true`. A passive hook runs normally but never marks the request as handled, so paths no route serves still return 404:
+
+```groovy
+@Alert(value = '~on /(.*) hit', priority = 1000, passive = true)
+static _logRequest(HttpResult r) {
+    println "Request: /${r.matches[0]}"
+}
+```
+
+Without `passive = true`, this wildcard would match every path and silently turn missing pages into 200s.
+
 ## The `on page hit` Catch-All
 
 `on page hit` fires after every HTTP request. It's ideal for:
@@ -127,7 +138,7 @@ static _notFound(HttpResult r) {
 }
 ```
 
-The `r.called` property is `false` when no handler matched the request. This is how Spaceport detects 404s internally, and you can use the same mechanism for custom error pages.
+The `r.called` property is `false` when no handler claimed the request. This is how Spaceport detects 404s internally, and you can use the same mechanism for custom error pages. (Hooks marked `passive = true` deliberately don't set `called` — that's what lets global middleware run everywhere without breaking this check.)
 
 ## JSON APIs
 

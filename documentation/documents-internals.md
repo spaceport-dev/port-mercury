@@ -58,6 +58,8 @@ Every subsequent CouchDB request calls `ensureValidSession()` before executing. 
 
 This ObjectMapper is used for all document serialization and deserialization between Spaceport and CouchDB.
 
+`View.getDocuments()` and `View.rowsAs(...)` construct their own `ObjectMapper` instances with the same `DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES` setting. (Earlier framework versions referenced a Jackson 1.x enum path that does not exist in the bundled Jackson — `DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES` — which made both methods throw `MissingPropertyException` on first use. Both now use the correct `DeserializationFeature` form and are fully functional.)
+
 ---
 
 ## Document Caching
@@ -72,6 +74,7 @@ This ObjectMapper is used for all document serialization and deserialization bet
 - **On `exists()`**: Always bypasses the cache (`ignoreCache = true`) to check actual database state.
 - **On `close()`**: The document is removed from the cache. The next `get()` call will fetch from CouchDB.
 - **On `asType()` (type conversion)**: If the target type differs from the cached type, the cache entry is evicted and the document is re-fetched as the new type via `getAs()`.
+- **On `View.getDocuments()` with `include_docs`**: The cache is **not** touched. Documents are deserialized straight from the view row payload and come back as detached, base-`Document` instances. Without `include_docs`, `getDocuments()` falls back to `getDoc(id, ...)` per row, which reads and populates the cache normally.
 
 ### Cache Key Format
 
@@ -255,6 +258,10 @@ This prevents unnecessary CouchDB writes on every application restart.
 ```
 
 It strips any `_design/` prefix from the document ID to avoid doubling it, then appends any query parameters. The JSON response is deserialized into a `View` object.
+
+The `View.get(..., Map parameters)` overload forwards its map straight to CouchDB as query parameters (URL-encoded by `HTTP.buildUrl`). `View.getByKey(...)` is a thin wrapper over this plumbing: it JSON-encodes the key via `JsonOutput.toJson(key)` and passes it as the `key` parameter (plus `include_docs` when requested). The JSON encoding matters twice over — CouchDB requires the `key` parameter to be a JSON value (a string key must arrive as `"value"`, quotes included), and encoding a `List` to a single JSON string means a compound key travels as **one** query parameter rather than being expanded into repeated parameters the way `HTTP.buildUrl` would expand a raw `Collection`.
+
+`getByKey` passes no `stale`/`update` parameter, so CouchDB's default read behavior applies: on CouchDB 3.x the view index is brought up to date on read, meaning a just-written document is reflected in a subsequent keyed lookup. A stale-but-fast read is an explicit `update: false` opt-in via the `Map parameters` overload.
 
 ---
 

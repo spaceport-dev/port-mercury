@@ -36,11 +36,12 @@ def client = Client.getNewClient(cookies.'spaceport-uuid')
 
 #### `Client.getClient(String clientId)`
 
-Retrieves an existing Client by its internal ID (the user document `_id` for authenticated clients).
+Retrieves an existing Client by its internal ID (the user document `_id` for authenticated clients). If no registered Client matches, a new one is created and registered with the given ID.
 
 - **Parameters:**
   - `clientId` — The client/user ID
-- **Returns:** `Client` or `null`
+- **Returns:** `Client` (never `null` for a non-null ID; a new Client is created if none exists)
+- **Note:** More than one registered Client can share a `user_id` (e.g., a durable session restored on one cookie while the same user is logged in on another). When that happens, this method prefers a Client with a live WebSocket connection (`isActive()`), falling back to the first match — so a server-initiated push by user ID reaches the session that can actually receive it.
 
 ```groovy
 def client = Client.getClient(userId)
@@ -98,9 +99,9 @@ Finds the Client associated with a given WebSocket handler.
 | Property | Type | Access | Description |
 |---|---|---|---|
 | `created` | `long` | read | Timestamp (millis) when the Client was created |
-| `user_id` | `String` | private | The user document ID; access via `getUserID()` |
+| `user_id` | `String` | private | The user document ID; access via `getUserID()`, set via `authenticate(userId)` |
 | `cargo` | `Cargo` | read (final) | The Client's root Cargo container |
-| `authenticated` | `boolean` | private | Authentication state; access via `isAuthenticated()` |
+| `authenticated` | `boolean` | private | Authentication state; access via `isAuthenticated()`, set via `authenticate(userId)` / cleared via `deauthenticate(cookie)` — never by direct field access |
 | `authenticationCookies` | `List<String>` | read | Cookie values linked to this Client |
 | `sockets` | `Set<WeakReference<SocketHandler>>` | read | Active WebSocket connections |
 
@@ -174,7 +175,9 @@ client.attachCookie(cookies.'spaceport-uuid')
 
 #### `removeCookie(String cookie)`
 
-Disassociates a cookie value from this Client. Used for logout.
+Disassociates a cookie value from this Client. This is a low-level primitive — it only drops the cookie from the Client's cookie list, leaving the authenticated flag, WebSockets, and registry entry untouched. It is also used internally by `attachCookie()` to reassign a cookie between Clients, which must not log anyone out.
+
+For logging a user out, use `deauthenticate(cookie)` instead, which performs the full session teardown.
 
 - **Parameters:**
   - `cookie` — The cookie value to remove
@@ -182,6 +185,65 @@ Disassociates a cookie value from this Client. Used for logout.
 ```groovy
 client.removeCookie(cookies.'spaceport-uuid')
 ```
+
+---
+
+#### `authenticate(String userId)`
+
+Marks this already-bound Client as authenticated for the given user, **in place and without a password**. This is the supported way to restore a session that was validated out-of-band — for example, from a durable/persisted session store after a restart, or from an SSO assertion.
+
+Because it mutates the Client the framework already bound to the request's cookie, the cookie↔Client binding stays intact and later requests keep resolving to the same object via `getClientByCookie()`. It deliberately does **not** mint a new Client (as `getClient(userId)` would) and does **not** verify credentials (as `getAuthenticatedClient(userId, password)` does).
+
+- **Parameters:**
+  - `userId` — The authenticated user's ID
+- **Security:** This sets authenticated state without checking credentials. Only call it after your code has already validated the session (a valid, non-revoked, non-expired session record; a verified SSO assertion; etc.).
+
+```groovy
+// Restoring a session validated against a persisted session store
+if (!client.isAuthenticated()) {
+    client.authenticate(userId)
+    r.context.dock = client.getDock(uuid)
+}
+```
+
+---
+
+#### `deauthenticate(String cookie)`
+
+Logs this Client out of a single session. Calls `removeCookie(cookie)`, and if that was the Client's **last** cookie, performs the full teardown: sets `authenticated = false`, closes all WebSockets via `closeSockets()`, and removes the Client from the ClientRegistry.
+
+If other cookies remain (the user is still logged in on another device), the Client stays authenticated and registered — only the one session is detached.
+
+- **Parameters:**
+  - `cookie` — The session cookie (`spaceport-uuid`) to log out
+- **Behavior:**
+  - Safe to call during a request: the in-flight request already holds its Client reference, so registry removal does not affect it. The browser's next request finds no matching cookie and is bound to a fresh anonymous Client.
+  - After full teardown, `Client.getClient(userId)` no longer resurfaces the logged-out Client — this is intended.
+
+```groovy
+@Alert('on /logout hit')
+static _logout(HttpResult r) {
+    r.client.deauthenticate(r.context.cookies.'spaceport-uuid' as String)
+    r.setRedirectUrl('/')
+}
+```
+
+---
+
+#### `deauthenticateAll()`
+
+Logs this Client out of every session ("log out everywhere"). Unconditionally clears all cookies, sets `authenticated = false`, closes all WebSockets, and removes the Client from the ClientRegistry.
+
+```groovy
+// "Sign out of all devices" action
+client.deauthenticateAll()
+```
+
+---
+
+#### `closeSockets()`
+
+Closes and detaches all of this Client's WebSocket connections. Called automatically during logout (`deauthenticate` / `deauthenticateAll`) so a de-authenticated session does not keep a live authenticated socket open. Rarely needs to be called directly.
 
 ---
 
@@ -219,7 +281,7 @@ Creates a new user document in the `users` database with a BCrypt-hashed passwor
 
 - **Parameters:**
   - `userId` — The user ID (becomes the document `_id`)
-  - `password` — The plaintext password (will be hashed with BCrypt)
+  - `password` — The plaintext password (will be hashed with BCrypt, using the configured work factor — see `changePassword()`)
 - **Returns:** `ClientDocument`
 
 ```groovy
@@ -303,12 +365,20 @@ Verifies a plaintext password against the stored hash. Supports both BCrypt hash
 
 Changes the user's password. By default, hashes the new password with BCrypt before storing.
 
+The bcrypt work factor is configurable via the manifest (`auth` → `bcrypt cost`), defaulting to `10`. Values in `4`–`31` are honored; anything else — unset, non-numeric, or out of range — falls back to `10`. Changing the configured cost never invalidates existing hashes — each stored hash records the cost it was created with, so existing passwords keep verifying and only newly set passwords use the new cost. See the [Manifest API Reference](manifest-api.md) for details.
+
 - **Parameters:**
   - `newPassword` — The new plaintext password
   - `hash` — Whether to BCrypt-hash the password (default: `true`). Pass `false` only for pre-hashed values.
 
 ```groovy
 user.changePassword('newS3cureP@ss')
+```
+
+```yaml
+# In the config manifest — raise the work factor for new passwords
+auth:
+  bcrypt cost: 12
 ```
 
 ---
@@ -399,7 +469,7 @@ Updates an existing note (matched by its `key` property). The note content is sa
 
 **Package:** `spaceport.personnel`
 
-Tracks all active Client instances in a `CopyOnWriteArrayList`. Clients are added when created but are **never automatically removed** — the registry grows for the lifetime of the application.
+Tracks all active Client instances in a `CopyOnWriteArrayList`. Clients are added when created and removed only by an explicit logout — `deauthenticate(cookie)` (when the last cookie is detached) or `deauthenticateAll()`. There is no automatic expiration or eviction, so sessions that never log out remain registered for the lifetime of the application.
 
 The registry is used internally by `Client.getClient()`, `Client.getClientByCookie()`, and `Client.getClientByHandler()` to look up clients.
 
@@ -464,6 +534,7 @@ http:
 | Value | Random UUID |
 | Path | `/` |
 | HttpOnly | `true` |
+| SameSite | `Lax` |
 | Secure | `true` in production, `false` in debug mode |
 | Max-Age | Configurable, default 60 days (5,184,000 seconds) |
 

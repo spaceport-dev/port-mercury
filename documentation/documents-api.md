@@ -558,8 +558,6 @@ def results = View.get('my-views', 'by-author', 'articles')
 
 #### `getWithDocuments(String document_id, String view_id, String database)`
 
-> **Note:** This method is experimental and not yet recommended for production use. Prefer the [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `grabDocument()` method on your Row class, which gives you typed results and loads full documents on demand rather than eagerly.
-
 Queries the view with `include_docs=true`, so each row contains the full document. Use `getDocuments()` on the result to get `Document` objects.
 
 ```groovy
@@ -568,6 +566,7 @@ def docs = results.getDocuments()
 ```
 
 - **Returns:** `View`.
+- **Note:** Documents retrieved this way are deserialized directly from the row payload — they are **not** added to the document cache and come back as detached, base-`Document` instances (not your typed subclass). Fine for read-only use; for mutate-and-save workflows, prefer the [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `grabDocument()` method, or reload by ID through the cache-aware `Document.getAs(...)`. See `getDocuments()` below.
 
 ---
 
@@ -584,6 +583,31 @@ def results = View.get('my-views', 'by-author', 'articles', [
 
 - **Parameters:** `document_id`; `view_id`; `database`; `parameters` --- a map of CouchDB view query parameters.
 - **Returns:** `View`.
+- **Note:** CouchDB requires `key`/`startkey`/`endkey` values to be JSON-encoded — a string key must be sent with its quotes, as in `key: '"Alice"'` above. For single-key lookups, `getByKey(...)` handles the encoding for you.
+
+---
+
+#### `getByKey(String document_id, String view_id, String database, def key, boolean includeDocs = true)`
+
+Queries the view restricted to a single key, server-side. The key is JSON-encoded automatically before being sent to CouchDB, avoiding both the manual-quoting gotcha of the `Map parameters` overload and the inefficient fetch-all-rows-then-filter-in-Groovy pattern.
+
+```groovy
+// All sessions for one user (ids only — cheapest)
+def rows = View.getByKey('views', 'by-user', 'sessions', userId, false).rows
+
+// Same, but with the full documents attached
+List<Document> docs = View.getByKey('views', 'by-user', 'sessions', userId).getDocuments()
+
+// Compound key
+def rows2 = View.getByKey('views', 'by-tenant-user', 'sessions', [tenantId, userId], false).rows
+```
+
+- **Parameters:** `document_id` --- the design document name (with or without the `_design/` prefix); `view_id` --- the view name; `database`; `key` --- the key to match, JSON-encoded automatically; `includeDocs` --- whether each row carries its full document (default `true`).
+- **Returns:** `View` whose `rows` contain only the matching rows.
+- **Key encoding:** a `String` is sent as `"value"` (quotes included), a number as `42`, and a `List` as a compound key `["a","b"]`. Pass a List directly for compound keys — the encoded key travels as a single query parameter.
+- **Matching is exact:** CouchDB compares the encoded key byte-for-byte against the view's emitted keys. There is no case-insensitive or partial matching — emit normalized keys (e.g., lowercased) if you need that.
+- **Note:** No `stale`/`update` parameter is passed, so CouchDB's default read behavior applies — on CouchDB 3.x the view index is brought up to date on read, so a just-saved document is reflected in a subsequent keyed lookup. For a stale-but-fast read, use the `Map parameters` overload with an explicit `update: false`.
+- **Note:** With `includeDocs = true`, retrieve documents via `getDocuments()` — but see that method's cache caveat. To mutate and save matching documents, fetch ids only (`includeDocs = false`) and reload each through the cache-aware `Document.getAs(...)`.
 
 ---
 
@@ -600,15 +624,42 @@ def results = View.get('my-views', 'by-author', 'articles', [
 
 #### `getDocuments()`
 
-> **Note:** This method is experimental. Prefer the [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `grabDocument()` method on your Row class for typed, on-demand document loading.
-
-Converts the view rows into `Document` objects. If the view was queried with `include_docs=true`, deserializes the embedded documents. Otherwise, fetches each document by `_id`.
+Converts the view rows into `Document` objects. If the view was queried with `include_docs=true`, deserializes the embedded documents from the row payload. Otherwise, fetches each document by `_id` through the document cache.
 
 ```groovy
 List<Document> docs = results.getDocuments()
 ```
 
 - **Returns:** `List<Document>`.
+- **Cache behavior — the two paths differ:**
+  - **`include_docs=true`:** documents are deserialized directly from the row payload. They are **not** added to the document cache and come back as detached, base-`Document` instances (not your typed subclass).
+  - **Without `include_docs`:** each document is fetched by `_id` via `getDoc(...)`, which reads and populates the cache.
+- **Guidance:** to *read* matching documents cheaply, `include_docs` + `getDocuments()` is fine. To *mutate and save*, fetch ids only and reload each through the cache-aware `Document.getAs(...)` — saving the detached copies bypasses the cache and subclass typing, and can diverge from a cached instance of the same document held elsewhere. The [Row/Value pattern](documents-examples.md#typed-view-results-rowvalue-pattern) with a `grabDocument()` method remains a good structured alternative that loads documents on demand through the cache.
+
+---
+
+#### `rowsAs(Class<T> rowType)`
+
+Returns the view's rows recursively coerced into instances of the given row class. Unlike Groovy's `rows as List<Row>` — where the generic parameter is erased and each row stays a `LinkedHashMap` — this genuinely converts each row map into a typed Row, **including nested typed properties** such as a typed `value` field.
+
+```groovy
+class Row {
+    String key
+    String id
+    Value  value
+
+    static class Value {
+        String jobId
+        String client
+    }
+}
+
+List<Row> typed = View.get('views', 'list-jobs', 'jobs').rowsAs(Row)
+```
+
+- **Parameters:** `rowType` --- the class to coerce each row into.
+- **Returns:** `List<T>` of typed row instances, or `null` if `rows` is `null`.
+- **Note:** Unknown JSON properties are ignored during conversion, so the row class only needs fields for the properties you care about.
 
 ---
 

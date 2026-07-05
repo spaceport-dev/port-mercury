@@ -513,7 +513,7 @@ Always sanitize user input before displaying or storing it:
 <input value=${ item.getString('text').quote() }>
 ```
 
-### Conditional Strings with `.if {}` and `.unless {}`
+### Conditional Strings with `.if {}`
 
 ```html
 /// Show email only if public

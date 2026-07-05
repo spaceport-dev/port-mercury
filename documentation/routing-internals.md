@@ -117,7 +117,7 @@ The `spaceport-uuid` cookie is read from the request:
 - **Cookie present:** The existing `Client` object is looked up by UUID.
 - **Cookie absent:** A new UUID is generated, a new `Client` is created, and a `Set-Cookie` header is added to the response.
 
-The cookie is **HttpOnly** (not accessible to JavaScript) with a configurable expiry (default: 60 days, set via `http.spaceport cookie expiration`). The path is `/`.
+The cookie is **HttpOnly** (not accessible to JavaScript) and **SameSite=Lax** (not sent on cross-site subrequests — a CSRF defense), with **Secure** added in production mode, a configurable expiry (default: 60 days, set via `http.spaceport cookie expiration`), and path `/`. The header is built by the static helper `HttpRequestHandler.buildSessionCookieHeader(uuid, maxAge, secure)` and emitted as a raw `Set-Cookie` header, because the bundled Servlet 3.1 Cookie API cannot express `SameSite`. See [Sessions Internals](sessions-internals.md) for the full pipeline.
 
 This means every browser that visits a Spaceport application gets a persistent client identity, even before authentication. The `Client` object holds session state, the session `Cargo` (dock), and authentication status.
 
@@ -164,7 +164,9 @@ Alerts.invokeAll(['on /users/123 hit', 'on /users/123 GET'], httpContext)
 - A handler matching both strings (e.g., a regex like `'~on /users/.* hit'`) is only invoked once, not twice.
 - If any handler sets `result.cancelled = true`, no further handlers execute in this pass.
 
-After `invokeAll` returns, if `result.called` is `false` (no handler matched), the response status is set to **404**.
+After `invokeAll` returns, if `result.called` is `false` (no handler claimed the request), the response status is set to **404**.
+
+Note that "claimed" is not quite the same as "matched": a hook registered with `passive = true` runs on a match but never sets `result.called`. This is what makes truly global middleware possible — a wildcard hook like `~on /(.*) hit` matches every path, including unrouted ones, and without `passive` it would flip `called` to `true` everywhere, silently turning missing routes into 200s. A passive hook observes or augments the request while leaving this 404 fallback intact.
 
 ### Step 11: Dispatch `on page hit`
 
@@ -174,7 +176,7 @@ Regardless of what happened in step 10 — whether a route matched, whether an e
 Alerts.invoke('on page hit', httpContext)
 ```
 
-This is a completely independent dispatch. It has its own set of registered handlers with their own priority order. The `HttpResult` from step 10 is reused (same context, same state), so `on page hit` handlers can see whether a route matched (`r.called`), what status was set, and any data written to the context.
+This is a completely independent dispatch. It has its own set of registered handlers with their own priority order. The `HttpResult` from step 10 is reused (same context, same state), so `on page hit` handlers can see whether a route claimed the request (`r.called` — passive hooks don't set it), what status was set, and any data written to the context.
 
 Common uses:
 - Serve custom 404 pages when `!r.called`

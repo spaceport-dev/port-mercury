@@ -169,6 +169,9 @@ http:
   cache control: "public, max-age=3600"
   spaceport cookie expiration: 2592000
 
+auth:
+  bcrypt cost: 12
+
 source modules:
   paths:
     - modules/*
@@ -192,6 +195,7 @@ stowaways:
 - `static assets.buffer: true` explicitly enables memory-mapped file buffers for performance
 - HTTP cache control is set to allow browser caching for 1 hour
 - Cookie expiration is reduced to 30 days (from the default 60)
+- `auth.bcrypt cost: 12` raises the password-hashing work factor from the default 10 — existing password hashes remain valid
 
 Start with:
 
@@ -306,6 +310,22 @@ http:
   allow headers: "Content-Type, Authorization, X-Requested-With"
   spaceport cookie expiration: 86400  # 1 day
 ```
+
+
+## Password Hashing Configuration
+
+Tuning the bcrypt work factor for password hashing:
+
+```yaml
+auth:
+  bcrypt cost: 12  # default is 10; valid range is 4-31
+```
+
+**Key patterns:**
+
+- Each `+1` roughly doubles the time it takes to hash a password — `12` is a reasonable modern production value, while a low value like `4` speeds up test suites
+- Changing the cost is safe at any time: each stored hash records the cost it was created with, so existing passwords keep verifying. Only newly set passwords use the new value
+- Unset, non-numeric, or out-of-range values silently fall back to the default of `10`
 
 
 ## Environment-Specific File Organization

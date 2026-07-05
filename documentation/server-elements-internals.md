@@ -823,6 +823,6 @@ The reconcile pass also handles the case where a reactive expression initially e
 - **Element instances** are created per-request via `newInstance()`, so element state is request-scoped with no shared mutable state between requests.
 - **`launch()` is `synchronized`**, preventing concurrent rendering of the same Launchpad instance. Different Launchpad instances (different routes, different slices) render concurrently.
 - **`_bindings`, `_reactions`, and `_elements`** on the Launchpad binding are per-session, tied to a specific launch ID.
-- **`binding`** (the per-Launchpad script-binding map) is `Collections.synchronizedMap([:])` — chosen over `ConcurrentHashMap` because templates legitimately assign `null` values via the `def`-strip mechanism (e.g. `<% def foo = something?.maybeMissing %>` routes through `Binding.setVariable`, which `ConcurrentHashMap` would NPE on). The synchronized HashMap preserves coarse-grained thread-safety for concurrent websocket-event paths without the null-rejection.
+- **`binding`** (the per-Launchpad script-binding map) is `Collections.synchronizedMap([:])`, providing coarse-grained thread-safety for the concurrent websocket-event paths.
 - **Cargo objects** used within elements provide their own thread-safety guarantees.
 - **Hot-reload** clears every Launchpad's `elements` map plus the shared pool and template cache on a separate thread with a debounce delay; the `reloading` flag prevents overlapping reloads.

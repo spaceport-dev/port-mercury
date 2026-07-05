@@ -94,9 +94,12 @@ def results = View.get('views', 'by-author', 'articles')
 results.rows.each { row ->
     println "${row.value.title} by ${row.key}"
 }
+
+// Or fetch just one author's rows, filtered server-side
+def alices = View.getByKey('views', 'by-author', 'articles', 'Alice', false)
 ```
 
-Views are the primary way to list, filter, and aggregate documents. They run inside CouchDB itself and are incrementally updated, making them efficient even for large datasets.
+Views are the primary way to list, filter, and aggregate documents. They run inside CouchDB itself and are incrementally updated, making them efficient even for large datasets. When you only want the rows for a single key, `View.getByKey(...)` asks CouchDB to do the filtering rather than fetching every row and filtering in Groovy.
 
 ## Document Lifecycle
 

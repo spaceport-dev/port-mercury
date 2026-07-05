@@ -13,13 +13,24 @@ When `HttpRequestHandler` processes an incoming request:
 1. Parse the `Cookie` header and extract any existing `spaceport-uuid` value.
 2. If no `spaceport-uuid` cookie is present:
    - Generate a new UUID via `UUID.randomUUID().toString()`
-   - Create a `Set-Cookie` header with the following attributes:
+   - Build a `Set-Cookie` header with the following attributes:
      - `Path=/`
      - `HttpOnly`
+     - `SameSite=Lax`
      - `Secure` (only if not in debug mode)
      - `Max-Age` from manifest config `http.spaceport cookie expiration` (default: 5,184,000 seconds / 60 days)
    - Add the cookie to the response
 3. The cookie value is then used to resolve or create the Client for this request.
+
+The header is constructed by the pure static helper `HttpRequestHandler.buildSessionCookieHeader(String uuid, int maxAge, boolean secure)` and emitted as a **raw `Set-Cookie` header** via `response.addHeader(...)` rather than through `response.addCookie(...)`. This is deliberate: the bundled Servlet 3.1 API's `javax.servlet.http.Cookie` has no way to express `SameSite` (that arrived in Servlet 6 / Jakarta), while Jetty 9.4 — the bundled server — honors the raw header directly. Keeping the construction in a pure helper also makes the security attributes unit-testable without a servlet container.
+
+A production header looks like:
+
+```
+spaceport-uuid=<uuid>; Path=/; Max-Age=5184000; HttpOnly; SameSite=Lax; Secure
+```
+
+Debug mode drops only the `Secure` attribute (so the cookie works over `http://localhost`).
 
 ### WebSocket Upgrade
 
@@ -95,6 +106,25 @@ On failure:
 
 This alert-based cancellation allows applications to implement bans, IP restrictions, or multi-factor authentication checks without modifying the core auth code.
 
+Note that the in-place marking in steps 2–3 (setting `authenticated` and `user_id` on an existing Client) is also exposed publicly as `client.authenticate(userId)`. Application code that restores an out-of-band-validated session — for example, from a durable session store — calls that method rather than touching the private fields.
+
+### Logout Teardown
+
+The logout verbs perform a staged teardown built on top of the `removeCookie` primitive:
+
+1. `deauthenticate(cookie)` calls `removeCookie(cookie)`, dropping the cookie from `authenticationCookies`
+2. If that was the Client's **last** cookie:
+   - `authenticated` is set to `false`
+   - `closeSockets()` closes and detaches every live WebSocket session
+   - The Client is removed from `ClientRegistry.activeClients`
+3. If other cookies remain (another device is still logged in), nothing else happens — the Client stays authenticated and registered
+
+`deauthenticateAll()` skips the per-cookie logic: it clears all cookies and performs the full teardown unconditionally.
+
+The registry removal matters for two reasons. A cookieless Client can no longer be resolved by `getClientByCookie()`, so leaving it registered would only lengthen the O(n) registry scans — and it would remain resolvable (still authenticated) via `getClient(userId)`, resurfacing a logged-out session to server-initiated pushes. Removal closes both gaps. Removal is concurrency-safe (`activeClients` is a `CopyOnWriteArrayList`), and the in-flight request is unaffected because it already holds its Client reference.
+
+`closeSockets()` iterates a **snapshot** of the socket set: closing a session triggers `onWebSocketClose → removeSocketHandler` on the socket's own thread, which would otherwise mutate the set mid-iteration. Each still-connected handler is closed via `handler.getSession()?.close()` — the same mechanism `SocketResult` uses — and the set is then cleared.
+
 ## Dock Storage Model
 
 The Dock is a per-session Cargo container. Its storage backend depends on whether the Client is authenticated.
@@ -150,14 +180,14 @@ class ClientRegistry {
 
 The `CopyOnWriteArrayList` provides thread-safe iteration without explicit locking, which is important since client lookups happen on every HTTP request. The trade-off is that writes (adding new clients) are more expensive because they copy the entire list.
 
-### No Eviction
+### No Automatic Eviction
 
-The ClientRegistry never removes Clients. This is a deliberate simplicity trade-off:
+The ClientRegistry removes Clients only on explicit logout — `deauthenticate(cookie)` unregisters a Client when its last cookie is detached, and `deauthenticateAll()` unregisters unconditionally. Beyond that, there is no automatic cleanup. This is a deliberate simplicity trade-off:
 
-- Clients accumulate for the lifetime of the JVM process
+- Clients that never log out accumulate for the lifetime of the JVM process
 - There is no expiration, no LRU eviction, no periodic cleanup
 - For applications with moderate traffic, this is not a problem — Client objects are lightweight
-- For high-traffic applications or long-running servers, memory usage will grow proportionally to the total number of unique visitors
+- For high-traffic applications or long-running servers, memory usage will grow proportionally to the number of unique visitors who never log out
 
 ### Lookup Methods
 
@@ -165,9 +195,11 @@ All lookups are linear scans over the full list:
 
 | Method | Scans | Matches on |
 |---|---|---|
-| `getClient(clientId)` | All clients | `client.user_id == clientId` |
+| `getClient(clientId)` | All clients | `client.user_id == clientId` — prefers a match whose WebSocket is live (`isActive()`), else the first match |
 | `getClientByCookie(cookie)` | All clients | `cookie in client.authenticationCookies` |
 | `getClientByHandler(handler)` | All clients | `handler in client.sockets` (via WeakReference) |
+
+The `getClient` socket preference exists because more than one registered Client can share a `user_id` — for example, a durable session restored onto one cookie's Client while the same user is already logged in on another cookie in the same process. For server-initiated lookups and pushes by user ID, the connected Client is the one that can actually receive the message. Single-match and no-match behavior is unchanged (no match still creates and registers a new Client).
 
 ## WebSocket Client Association
 
@@ -183,7 +215,8 @@ WebSocket handlers are stored as `WeakReference<SocketHandler>` in the Client's 
 1. **Connection opened:** `client.attachSocketHandler(handler)` adds a `WeakReference` to the set
 2. **Messages flow:** The handler is used for transmissions and other WebSocket communication
 3. **Connection closed:** `client.removeSocketHandler(handler)` removes the reference from the set
-4. **If not explicitly removed:** The WeakReference will eventually return `null` after GC
+4. **Logout:** `client.closeSockets()` (called by `deauthenticate` / `deauthenticateAll`) closes every still-connected session and clears the set, so a logged-out session cannot keep a live authenticated socket
+5. **If not explicitly removed:** The WeakReference will eventually return `null` after GC
 
 ## Thread Safety Considerations
 
@@ -198,6 +231,7 @@ WebSocket handlers are stored as `WeakReference<SocketHandler>` in the Client's 
 ### Cookie Security
 
 - `HttpOnly` prevents client-side JavaScript from reading the session cookie, mitigating XSS-based session theft
+- `SameSite=Lax` keeps the cookie off cross-site subrequests — the enabling condition for CSRF and one of the vectors for planting a fixed session ID — while still sending it on top-level navigations, so following an external link into the app (or bouncing through a login redirect) arrives with the session intact. `Strict` would withhold the cookie on those navigations too, which is why `Lax` is the right balance (and the modern browser default)
 - `Secure` flag is only set in production (non-debug) mode — during development, cookies work over plain HTTP
 - The cookie value is a random UUID with no embedded information — session data is server-side only
 
@@ -207,6 +241,8 @@ All ClientDocument profile setters (`setName`, `setEmail`, `setPhone`, `updateSt
 
 ### Password Storage
 
-- New passwords are hashed with BCrypt via `changePassword()`
+- New passwords are hashed with BCrypt via `changePassword()`, using `BCrypt.gensalt(bcryptCost())`
+- The work factor comes from the manifest (`auth` → `bcrypt cost`), resolved by `ClientDocument.resolveBcryptCost()`: values in `4`–`31` are honored; unset, non-numeric, or out-of-range values fall back to the default of `10`. The clamping means a config typo can neither throw (jBCrypt rejects costs outside 4–31) nor silently weaken hashing
+- Changing the configured cost never invalidates stored hashes — bcrypt embeds the cost in every hash string (`$2a$<cost>$...`) and `BCrypt.checkpw` reads it from the stored hash, not from config. Only newly set passwords use the new cost
 - `checkPassword()` supports both BCrypt hashes and legacy plaintext for migration scenarios
-- There is no automatic migration from plaintext to BCrypt on login — applications must handle this explicitly if needed
+- There is no automatic migration from plaintext to BCrypt on login, and no automatic re-hash when a stored hash's cost is below the configured target — applications must handle either explicitly if needed

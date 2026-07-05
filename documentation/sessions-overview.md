@@ -24,6 +24,7 @@ Browser makes request
 
 The `spaceport-uuid` cookie is:
 - **HttpOnly** — JavaScript cannot read it, preventing XSS-based session theft
+- **SameSite=Lax** — not sent on cross-site subrequests, defending against CSRF while still working on normal links into your app
 - **Secure** in production — only sent over HTTPS
 - **Persistent** — defaults to 60 days, configurable in your manifest
 
@@ -67,15 +68,19 @@ static _login(HttpResult r) {
 
 Once authenticated, the Client gains access to the user's ClientDocument (profile, permissions) and its Dock becomes database-backed instead of memory-only.
 
-Logging out is equally straightforward:
+Logging out is equally straightforward. The `deauthenticate` verb detaches the session cookie and, when it was the client's last session, fully tears the Client down — clears the authenticated flag, closes its WebSockets, and removes it from the registry:
 
 ```groovy
 @Alert('on /logout hit')
 static _logout(HttpResult r) {
-    r.client.removeCookie(r.context.cookies.'spaceport-uuid' as String)
+    r.client.deauthenticate(r.context.cookies.'spaceport-uuid' as String)
     r.setRedirectUrl('/')
 }
 ```
+
+For a "sign out of all devices" action, `client.deauthenticateAll()` logs the user out of every session at once.
+
+There is also a third verb for the opposite direction: `client.authenticate(userId)` marks an already-bound Client as authenticated **without a password**. It exists for restoring sessions that were validated some other way — for example, from a durable session store after a server restart, or from an SSO assertion. Because it skips credential checks, it should only be called after your code has already validated the session.
 
 ## The Dock: Session-Scoped Storage
 
@@ -127,6 +132,9 @@ There is no built-in role hierarchy — permissions are flat strings. Your appli
 | Store temporary session data | `r.context.dock` |
 | Create a user account | `ClientDocument.createNewClientDocument(userId, password)` |
 | Log a user in | `Client.getAuthenticatedClient(userId, password)` |
+| Log a user out | `client.deauthenticate(cookie)` |
+| Log a user out everywhere | `client.deauthenticateAll()` |
+| Restore an already-validated session | `client.authenticate(userId)` |
 | Check login status | `client.isAuthenticated()` |
 | Manage user permissions | `client.document.hasPermission()`, `addPermission()`, `removePermission()` |
 | Access user profile | `client.document.getName()`, `getEmail()`, etc. |

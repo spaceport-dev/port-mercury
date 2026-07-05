@@ -589,14 +589,6 @@ Variables declared with `def` inside closures retain their `def` and remain loca
 <button on-click=${ _{ counter++ }}>Increment</button>
 ```
 
-**Null values are supported.** The per-Launchpad `binding` is a `Collections.synchronizedMap` (not a `ConcurrentHashMap`), so writing `null` through `Binding.setVariable` is safe:
-
-```html
-<% def foo = something?.maybeMissing %>
-```
-
-When `something` is `null`, `foo` becomes `null` in the binding without raising. (Earlier versions used a `ConcurrentHashMap`, which rejected null values and forced workarounds like `def foo = something ?: ''` or a typed declaration that opted the variable out of reactivity.)
-
 ---
 
 ## Static Properties
@@ -654,6 +646,6 @@ Clears all Launchpad-owned element state: iterates `byName.values()` and clears 
 | `name` | `String` | The Launchpad's resolved name. `"global"` for the no-arg form; derived from the path's last segment or set explicitly via the `name:` opt. Used as the slice identifier in qualified `<g:slice/element>` tags. |
 | `sourcePath` | `String` | The Launchpad's source directory (always normalized to end with `/`). Contains `parts/` and optionally `elements/`. |
 | `launchID` | `String` | Unique identifier for this Launchpad instance, generated as a UUID. Used to associate WebSocket connections with their template bindings. |
-| `binding` | `Map` | Per-Launchpad script-binding map (`Collections.synchronizedMap`). Holds template variables, reactions, server-action bindings, and internal state. Accepts `null` values (the `def`-strip mechanism may legitimately write nulls). |
+| `binding` | `Map` | Per-Launchpad script-binding map (`Collections.synchronizedMap`). Holds template variables, reactions, server-action bindings, and internal state. |
 | `elements` | `ConcurrentHashMap<String, Class>` | Per-Launchpad local element map, keyed by kebab-case tag name. Always checked first during element resolution. Replaces the old static `Launchpad.elements`. |
 | `allowFolderTraversal` | `boolean` | Default `false`. When `false`, template paths containing `..` are rejected to prevent directory traversal. |

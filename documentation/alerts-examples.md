@@ -200,6 +200,34 @@ static _home(HttpResult r) {
 
 The `authPlug` closure is reusable across multiple route handlers. It enriches `r.context.data` with user information while checking authentication.
 
+## Global Middleware with Passive Hooks
+
+A hook on the global wildcard `~on /(.*) hit` matches **every** request — including paths no route serves. Without `passive = true`, such a hook would mark every path as handled, turning genuine 404s into empty 200s. With it, the middleware observes and augments requests while leaving routing untouched:
+
+```groovy
+import spaceport.computer.alerts.Alert
+import spaceport.computer.alerts.results.HttpResult
+
+class RequestMiddleware {
+
+    // Request logging on every route — unrouted paths still 404
+    @Alert(value = '~on /(.*) hit', priority = 1000, passive = true)
+    static _logRequest(HttpResult r) {
+        println "${r.context.request.method} /${r.matches[0]} — client ${r.client?.getUserID()}"
+    }
+
+    // Security-header injection, same idea
+    @Alert(value = '~on /(.*) hit', priority = 999, passive = true)
+    static _securityHeaders(HttpResult r) {
+        r.context.response.setHeader('X-Content-Type-Options', 'nosniff')
+    }
+}
+```
+
+**Why passive?** Spaceport's 404 fallback fires only when no hook claimed the request. A passive hook runs normally — matching, capture groups, priority, even `r.cancelled = true` if it needs to short-circuit — but never sets `r.called`, so it can't accidentally claim routes it doesn't own. Use it for session restore, logging, metrics, and header injection; keep real route handlers non-passive so they *do* claim their requests.
+
+Before `passive` existed, the workaround was scoping middleware to a path prefix with real handlers (e.g. `~on /home/(.*) hit`) — still a fine choice when the middleware genuinely only concerns that subtree.
+
 ## Application Initialization
 
 ### Database and View Setup
@@ -359,6 +387,7 @@ This exposes test pages only when the application is running in debug mode.
 | Method-specific | `'on /path POST'` | Separate GET/POST handlers |
 | JSON API | `'on /api/endpoint hit'` | `r.writeToClient(Map)` |
 | Auth guard | Closure + `r.authorize()` | `r.cancelled = true` to block |
+| Global middleware | `'~on /(.*) hit'` + `passive = true` | Observe/augment without breaking 404s |
 | DB init | `'on initialized'` | Create databases, register views |
 | Pre-save hook | `'on document save'` | Atomic dedup flags on Cargo |
 | Post-save hook | `'on document saved'` | Async, safe to re-save |

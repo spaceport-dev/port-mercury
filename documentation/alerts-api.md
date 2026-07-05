@@ -12,6 +12,7 @@ Marks a **static method** as an event handler. The method is discovered automati
 |---|---|---|---|
 | `value` | `String` | *(required)* | The event string to match. Prefix with `~` for regex matching. |
 | `priority` | `int` | `0` | Execution order. Higher values execute first. |
+| `passive` | `boolean` | `false` | When `true`, the hook fires on a match but never sets `Result.called`. Use for cross-cutting middleware that observes or augments requests without marking them handled — a passive wildcard hook does not suppress the 404 fallback for unrouted paths. |
 
 **Requirements:**
 - The annotated method must be `static`
@@ -26,6 +27,23 @@ static _getData(HttpResult r) {
     r.writeToClient([status: 'ok'])
 }
 ```
+
+**Passive example** — global middleware that runs on every request without claiming any route:
+
+```groovy
+// Because it is passive, hitting an unrouted path still yields a 404.
+@Alert(value = '~on /(.*) hit', priority = 1000, passive = true)
+static _logRequest(HttpResult r) {
+    println "${r.context.request.method} /${r.matches[0]}"
+}
+```
+
+**Passive semantics:**
+- A passive hook still runs normally — matching, regex capture groups, priority ordering, and invocation are identical to a normal hook. The *only* difference is that it never sets `Result.called`.
+- It does not suppress other hooks: if a passive middleware and a normal handler both match, both run and the normal handler still sets `called`.
+- The flag is honored in both `Alerts.invoke(...)` and `Alerts.invokeAll(...)` — and a hook matching multiple event strings in `invokeAll` stays passive across all of them.
+- Cancellation is unchanged: a passive hook can still set `result.cancelled = true` to short-circuit the chain; `passive` governs only `called`.
+- Do **not** mark hooks that actually produce a response as passive — a route handler should claim its request (the default) so the 404 fallback stays correct for everything else.
 
 ---
 
@@ -83,7 +101,7 @@ The base result object passed to every alert handler. Mutable — handlers modif
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `cancelled` | `boolean` | `false` | Set to `true` to stop the handler chain. No further handlers will execute. |
-| `called` | `boolean` | `false` | `true` if at least one handler matched and executed. Used internally to detect 404s. |
+| `called` | `boolean` | `false` | `true` if at least one non-passive handler matched and executed. Handlers registered with `passive = true` run without setting it. Used internally to detect 404s. |
 | `matches` | `List<String>` | `[]` | Regex capture groups from the matching event string. 0-indexed. |
 | `context` | `Object` | *(from invoker)* | The context data provided by the event source. Type varies by event. |
 
@@ -214,6 +232,8 @@ Adds a raw `Cookie` object for full control. Returns `this` for chaining.
 
 ##### `removeResponseCookie(String name)`
 Removes a cookie by setting its max-age to 0. Returns `this` for chaining.
+
+> **Note:** Cookies set through these helpers carry no `SameSite` attribute. To set `SameSite` on an application cookie, add a raw `Set-Cookie` response header instead. (Spaceport's own `spaceport-uuid` session cookie does include `SameSite=Lax` — see [Sessions Internals](sessions-internals.md) for how and why.)
 
 #### Authentication Helpers
 

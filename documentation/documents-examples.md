@@ -193,7 +193,7 @@ class Job extends Document {
 
     // Query the view and return typed results
     static List<Row> grabAllJobs() {
-        return View.get('jobs', 'list-jobs', 'jobs').rows as List<Row>
+        return View.get('jobs', 'list-jobs', 'jobs').rowsAs(Row)
     }
 
     // Filter helpers
@@ -217,6 +217,41 @@ fullJob.fields.notes = 'Updated from view listing'
 fullJob.save()
 ```
 
+**Why `rowsAs(Row)` and not `rows as List<Row>`?** Groovy erases the generic in `as List<Row>` — the cast returns the same list and each row stays a `LinkedHashMap`. Property reads like `row.value.status` still work (dynamic map access), but methods defined on `Row` — such as `grabDocument()` — don't exist on a map, and a nested typed `value` is never actually constructed. `rowsAs(Row)` produces real `Row` instances with typed nested `Value` objects.
+
+---
+
+## Keyed View Lookups
+
+When you only need the rows for one key, let CouchDB do the filtering instead of fetching the whole view and filtering in Groovy. `View.getByKey(...)` JSON-encodes the key for you (CouchDB requires the `key` query parameter to be a JSON value — a string key has to be sent with its quotes included):
+
+```groovy
+class Job extends Document {
+
+    // One client's jobs — filtered server-side by the 'by-client' view's emit key
+    static List<Row> grabJobsFor(String clientId) {
+        return View.getByKey('jobs', 'by-client', 'jobs', clientId, false).rowsAs(Row)
+    }
+}
+
+// Compound keys: pass a List, it becomes ["tenant-1","client-a"]
+def rows = View.getByKey('jobs', 'by-tenant-client', 'jobs', [tenantId, clientId], false).rows
+```
+
+Contrast with the fetch-all pattern this replaces:
+
+```groovy
+// Before: O(all rows) per lookup, filtered in Groovy
+static List<Row> grabJobsFor(String clientId) {
+    return grabAllJobs().findAll { it.value.client == clientId }
+}
+```
+
+**Key points:**
+- Matching is exact and server-side, against the view's emitted keys. There is no case-insensitive or partial matching — emit normalized keys (e.g., lowercased) from the view if you need that.
+- Pass `false` for `includeDocs` when the row `id`/`key`/`value` is enough — it is the cheapest form. Then load any document you need to mutate through a cache-aware getter (`grabDocument()`, `Document.getAs(...)`).
+- With `includeDocs` left at its default of `true`, each row carries its full document and `getDocuments()` can read them in bulk — but those documents are detached, base-`Document` copies that bypass the document cache. Fine for read-only display; not for mutate-and-save.
+
 ---
 
 ## View-Based Querying with Cargo.fromStore
@@ -232,7 +267,7 @@ class Job extends Document {
     // Returns REACTIVE Cargo wrapping the current job list
     static Cargo grabCurrentJobs() {
         def current = Cargo.fromStore('job-list')
-        current.set(View.get('jobs', 'list-jobs', 'jobs').rows as List<Row>)
+        current.set(View.get('jobs', 'list-jobs', 'jobs').rowsAs(Row))
         return current
     }
 }
@@ -506,6 +541,16 @@ class RateCard extends Document {
         def list = grabCurrentRateCards().get()
         def row = list.find { it.key.toLowerCase() == name.toLowerCase() }
         return row ? get(row.id, 'rate-cards') as RateCard : null
+    }
+
+    // Exact-match variant: lets CouchDB filter to the one key server-side.
+    // Note getByName() above matches case-insensitively — getByKey() cannot,
+    // since CouchDB compares emitted keys exactly. To go keyed AND stay
+    // case-insensitive, emit a lowercased key from the view and look up
+    // View.getByKey(..., name.toLowerCase(), false).
+    static RateCard getByExactName(String name) {
+        def rows = View.getByKey('rate-cards', 'list-rate-cards', 'rate-cards', name, false).rows
+        return rows ? get(rows[0].id as String, 'rate-cards') as RateCard : null
     }
 
     // -- Schema --

@@ -174,14 +174,14 @@ http:
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `http.spaceport cookie expiration` | `Integer` | `60` | Expiry time in **days** for the `spaceport-uuid` client identification cookie. |
+| `http.spaceport cookie expiration` | `Integer` | `5184000` (60 days) | Max-Age in **seconds** for the `spaceport-uuid` client identification cookie. |
 
 ```yaml
 http:
-  spaceport cookie expiration: 90
+  spaceport cookie expiration: 7776000  # 90 days
 ```
 
-The `spaceport-uuid` cookie is an HttpOnly cookie set automatically on every response. It identifies the client across requests and ties them to a `Client` session. See [Routing Internals](routing-internals.md) for details on client identification.
+The `spaceport-uuid` cookie is set automatically when a browser first visits, with `HttpOnly`, `SameSite=Lax`, and (in production) `Secure` attributes. It identifies the client across requests and ties them to a `Client` session. See [Routing Internals](routing-internals.md) for details on client identification.
 
 ### Static Assets
 
@@ -239,6 +239,6 @@ The `HttpResult` class (fully documented in [Alerts API Reference](alerts-api.md
 | **Cookies** | `addResponseCookie(String, String)`, `addSecureResponseCookie(String, String)`, `removeResponseCookie(String)` |
 | **File downloads** | `markAsAttachment(String)` |
 | **Auth** | `authorize(Closure)`, `ensure(Closure)`, `getClient()` |
-| **Flow control** | `r.cancelled = true` (stop handler chain), `r.called` (check if any handler matched) |
+| **Flow control** | `r.cancelled = true` (stop handler chain), `r.called` (check if any non-passive handler claimed the request) |
 
 See [Alerts API Reference](alerts-api.md) for full method signatures, parameter types, and examples.

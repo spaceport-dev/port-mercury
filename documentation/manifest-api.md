@@ -80,14 +80,14 @@ Toggles development mode. When `true`:
 - Directory listings are enabled for static asset paths
 - More verbose error messages are displayed
 - Static asset file-mapped buffers are disabled (for live editing)
-- The `spaceport-uuid` cookie is not restricted to HTTPS
+- The `spaceport-uuid` cookie is not restricted to HTTPS (the `Secure` flag is omitted so it works over `http://localhost`; `HttpOnly` and `SameSite=Lax` still apply)
 
 When `false`:
 
 - Hot-reloading is disabled
 - Directory listings are disabled
 - File-mapped buffers are enabled for static assets (better performance)
-- The `spaceport-uuid` cookie is set with the `Secure` flag
+- The `spaceport-uuid` cookie is set with the `Secure` flag (alongside the always-present `HttpOnly` and `SameSite=Lax`)
 
 **Always set to `false` in production.**
 
@@ -450,6 +450,32 @@ The max-age of the `spaceport-uuid` session tracking cookie, in seconds. This co
 http:
   spaceport cookie expiration: 2592000  # 30 days
 ```
+
+
+## Authentication
+
+### `auth.'bcrypt cost'`
+
+**Type:** `Integer`
+**Default:** `10`
+
+The bcrypt work factor used when hashing **new** passwords via `ClientDocument.changePassword()` and `ClientDocument.createNewClientDocument()`. Each increment roughly doubles the hashing time; `12` is a reasonable modern production value, and a low value like `4` speeds up test suites.
+
+```yaml
+auth:
+  bcrypt cost: 12
+```
+
+| Configured value | Effect |
+|---|---|
+| `4`–`31` | Honored (bcrypt's valid cost range) |
+| Unset, non-numeric, or out of range | Falls back to `10` |
+
+The fallback rules mean a config typo can neither break password hashing nor silently weaken it.
+
+**Changing the cost never invalidates existing passwords.** Every stored hash records the cost it was created with, and verification uses that recorded cost — not the configured one. Raising or lowering the value is safe at any time; only newly set passwords (new users, password changes and resets) use the new cost.
+
+See [Sessions & Client Management API](sessions-api.md) for the `ClientDocument` password methods, and [Sessions Internals](sessions-internals.md) for how cost resolution works.
 
 
 ## Custom Configuration Keys
