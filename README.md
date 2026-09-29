@@ -5,7 +5,7 @@
 Port-Mercury is a Spaceport starter kit that provides a basic app structure and configuration for building a 
 Spaceport application with some key Spaceport features.
 
-See also: [Scaffolds](https://spaceport.sh/docs/scaffolds#port-mercury) for more information.
+See also: [Scaffolds](https://frontier.spaceport.sh/docs/scaffolds#port-mercury) for more information.
 
 
 ## Getting Started
@@ -14,12 +14,12 @@ It offers a basic structure that includes the key components of Spaceport, inclu
 database access, reactivity, and more.
 
 <!-- If you are looking for a more complex configuration that may share resources with other applications, you may want to
-consider using the [Port-Gemini](https://spaceport.sh/docs/scaffolds#gemini) starter kit instead. -->
+consider using the [Port-Gemini](https://frontier.spaceport.sh/docs/scaffolds#gemini) starter kit instead. -->
 
 <!-- If you are looking for a multi-tenant application that has multiple users or groups, 
-[Port-Voyager](https://spaceport.sh/docs/scaffolds#voyager) might be a better place to start. -->
+[Port-Voyager](https://frontier.spaceport.sh/docs/scaffolds#voyager) might be a better place to start. -->
 
-Developer Onboarding: [https://spaceport.sh/docs/developer-onboarding](https://spaceport.sh/docs/developer-onboarding)
+Developer Onboarding: [https://frontier.spaceport.sh/docs/developer-onboarding](https://frontier.spaceport.sh/docs/developer-onboarding)
 
 
 ## Pre-requisites
@@ -56,7 +56,7 @@ curl -L https://spaceport.sh/builds/spaceport-latest.jar -o spaceport.jar
 
 ## AI-Assisted Development
 
-This starter kit includes a `documentation/` folder with the complete Spaceport framework documentation, which works great with AI coding assistants like [Claude Code](https://claude.ai/claude-code).
+Framework documentation lives in [spaceport-dev/documentation](https://github.com/spaceport-dev/documentation). Follow [documentation/README.md](documentation/README.md) to fetch a pinned local reference for developers and AI coding assistants. Downloaded docs are ignored by Git.
 
 For the best experience, see [SETUP-AGENTS.md](SETUP-AGENTS.md) for two options:
 - **Quick setup** — add a lightweight Spaceport Consultant agent to your project
@@ -66,4 +66,4 @@ Starting a brand-new project from scratch? Consider [create-spaceport-app](https
 
 
 ## Learn more
-For more information about Spaceport, visit the [Spaceport documentation](https://spaceport.sh/docs).
+For more information about Spaceport, visit the [Spaceport documentation](https://frontier.spaceport.sh/docs/).

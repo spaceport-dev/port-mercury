@@ -1,6 +1,6 @@
 # AI Agent Setup
 
-This project includes a `documentation/` folder with the complete Spaceport framework documentation. AI coding assistants can use this as a reference — but for the best results, give them a dedicated agent that knows how to use it.
+This project includes [documentation fetch instructions](documentation/README.md). Fetch the pinned shared reference before setting up agents. AI coding assistants can use this as a reference — but for the best results, give them a dedicated agent that knows how to use it.
 
 ## Option 1: Quick Setup — Spaceport Consultant Agent
 
@@ -26,7 +26,7 @@ You are the authoritative expert on the Spaceport framework for this project. Yo
 
 ## Primary Source
 
-The `documentation/` folder in this repository contains the complete Spaceport framework documentation. This is your source of truth. **Always read the relevant docs before answering — never guess at APIs.**
+Framework documentation is maintained at https://github.com/spaceport-dev/documentation. Before reading `documentation/`, check for `_index.md`; if absent, follow `documentation/README.md` to fetch the pinned cache. Consult the recorded revision and report fetch failures rather than guessing APIs. **Always read the relevant docs before answering — never guess at APIs.**
 
 ## What You Do
 
